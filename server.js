@@ -69,7 +69,7 @@ app.post("/assign-lead", async (req, res) => {
 
     // 🔑 Generate secure token + link
     const token = generateIssueToken(lead.id);
-    const issueLink = `https://yourdomain.com/mark-issued/${token}`;
+    const issueLink = `https://bankbot-leads.onrender.com/mark-issued/${token}`;
 
     // 📩 SMS via Twilio
     await twilioClient.messages.create({
@@ -344,3 +344,4 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
