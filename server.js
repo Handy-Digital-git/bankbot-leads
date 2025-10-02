@@ -313,7 +313,11 @@ app.get("/avg-tti", async (req, res) => {
 // --- Mark issued via token ---
 app.get("/mark-issued/:token", async (req, res) => {
   const { token } = req.params;
-  const leadId = token.split("-")[0]; // extract leadId from token
+  const parts = token.split("-");
+  
+  // UUIDs are always 5 parts separated by "-"
+  const leadId = parts.slice(0, 5).join("-"); 
+  const secret = parts.slice(5).join("-"); // optional, keep if you want to verify later
 
   if (!leadId) {
     return res.status(400).send("Invalid token");
@@ -339,9 +343,11 @@ app.get("/mark-issued/:token", async (req, res) => {
 
 
 
+
 // --- Start server ---
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
