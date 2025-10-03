@@ -313,6 +313,7 @@ app.get("/avg-tti", async (req, res) => {
 
 
 // --- Mark issued confirmation page ---
+// --- Mark issued confirmation page ---
 app.get("/mark-issued/:token", async (req, res) => {
   const { token } = req.params;
   const parts = token.split("-");
@@ -336,9 +337,26 @@ app.get("/mark-issued/:token", async (req, res) => {
     // Render confirmation HTML
     res.send(`
       <!DOCTYPE html>
-      <html>
+      <html lang="en">
       <head>
-        <title>Confirm Issued</title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Confirm Loan Issued - ${lead.first_name} ${lead.surname}</title>
+
+        <!-- SEO Meta -->
+        <meta name="description" content="Confirm marking ${lead.first_name} ${lead.surname}'s loan as issued.">
+        
+        <!-- Open Graph (for WhatsApp, Messenger, etc.) -->
+        <meta property="og:title" content="Confirm Loan Issued for ${lead.first_name} ${lead.surname}" />
+        <meta property="og:description" content="Click confirm below to mark this loan as issued." />
+        <meta property="og:type" content="website" />
+        <meta property="og:url" content="https://bankbot-leads.onrender.com/mark-issued/${token}" />
+        
+        <!-- Twitter Card -->
+        <meta name="twitter:card" content="summary" />
+        <meta name="twitter:title" content="Confirm Loan Issued for ${lead.first_name} ${lead.surname}" />
+        <meta name="twitter:description" content="Click confirm below to mark this loan as issued." />
+
         <style>
           body { font-family: Arial, sans-serif; text-align: center; padding: 40px; }
           h2 { color: #2563eb; }
@@ -368,6 +386,7 @@ app.get("/mark-issued/:token", async (req, res) => {
   }
 });
 
+
 // --- Confirm mark issued ---
 app.post("/confirm-issued/:token", async (req, res) => {
   const { token } = req.params;
@@ -379,6 +398,16 @@ app.post("/confirm-issued/:token", async (req, res) => {
   }
 
   try {
+    // Fetch lead details for name
+    const { data: lead, error: fetchError } = await supabase
+      .from("loan_applications")
+      .select("first_name, surname")
+      .eq("id", leadId)
+      .single();
+
+    if (fetchError || !lead) throw fetchError;
+
+    // Update status to Issued
     const { error } = await supabase
       .from("loan_applications")
       .update({
@@ -391,16 +420,15 @@ app.post("/confirm-issued/:token", async (req, res) => {
 
     res.send(`
       <!DOCTYPE html>
-  <html>
-  <head>
-    <title>Mark ${lead.first_name} ${lead.surname}'s Loan as Issued</title>
-    <meta property="og:title" content="Mark ${lead.first_name} ${lead.surname}'s Loan as Issued" />
-    <meta property="og:description" content="Click confirm below to mark this loan as issued." />
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://bankbot-leads.onrender.com/mark-issued/${token}" />
-  </head>
-      <body>
-        <h2>✅ Loan has been successfully marked as Issued</h2>
+      <html>
+      <head>
+        <title>Loan Marked as Issued</title>
+        <meta property="og:title" content="Loan Issued for ${lead.first_name} ${lead.surname}" />
+        <meta property="og:description" content="This loan has been successfully marked as issued." />
+        <meta property="og:type" content="website" />
+      </head>
+      <body style="font-family: Arial, sans-serif; text-align: center; padding: 40px;">
+        <h2>✅ ${lead.first_name} ${lead.surname}'s loan has been successfully marked as Issued</h2>
       </body>
       </html>
     `);
@@ -414,11 +442,13 @@ app.post("/confirm-issued/:token", async (req, res) => {
 
 
 
+
 // --- Start server ---
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
 
 
