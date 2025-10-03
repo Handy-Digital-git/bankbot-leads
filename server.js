@@ -88,7 +88,7 @@ Postcode: ${lead.postcode || ""}
 Best Time To Call: ${lead.best_call_time || ""}
 Collection Method: ${lead.method_collection || ""}
 
-➡️ Mark Issued for ${customerName}: ${issueLink}`,
+Once you have completed this loan, mark as issued with the link below: ${issueLink}`,
       from: twilioNumber,
       to: agent.phone,
     });
@@ -391,14 +391,14 @@ app.post("/confirm-issued/:token", async (req, res) => {
 
     res.send(`
       <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Issued Confirmed</title>
-        <style>
-          body { font-family: Arial, sans-serif; text-align: center; padding: 40px; }
-          h2 { color: green; }
-        </style>
-      </head>
+  <html>
+  <head>
+    <title>Mark ${lead.first_name} ${lead.surname}'s Loan as Issued</title>
+    <meta property="og:title" content="Mark ${lead.first_name} ${lead.surname}'s Loan as Issued" />
+    <meta property="og:description" content="Click confirm below to mark this loan as issued." />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://bankbot-leads.onrender.com/mark-issued/${token}" />
+  </head>
       <body>
         <h2>✅ Loan has been successfully marked as Issued</h2>
       </body>
@@ -419,6 +419,7 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
 
 
