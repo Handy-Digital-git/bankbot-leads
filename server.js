@@ -71,12 +71,14 @@ app.post("/assign-lead", async (req, res) => {
     const token = generateIssueToken(lead.id);
     const issueLink = `https://bankbot-leads.onrender.com/mark-issued/${token}`;
 
+    const customerName = `${lead.first_name || ""} ${lead.surname || ""}`.trim();
+
     // 📩 SMS via Twilio
     await twilioClient.messages.create({
       body: 
 `New lead assigned:
 
-${lead.title || ""} ${lead.first_name || ""} ${lead.surname || ""}
+${lead.title || ""} ${customerName}
 DOB: ${lead.dob || ""}
 Amount Requested: ${lead.amount_requested || ""} over ${lead.loan_term || ""} weeks
 Income: ${lead.income || ""}
@@ -86,20 +88,20 @@ Postcode: ${lead.postcode || ""}
 Best Time To Call: ${lead.best_call_time || ""}
 Collection Method: ${lead.method_collection || ""}
 
-➡️ Mark as Issued: ${issueLink}`,
+➡️ Mark Issued for ${customerName}: ${issueLink}`,
       from: twilioNumber,
       to: agent.phone,
     });
 
-    // 📧 Email via SendGrid (optional — includes issue link too)
+    // 📧 Email via SendGrid
     await sgMail.send({
       to: agent.email,
       from: "support@browsair.me",
-      subject: `New Lead Assigned - ${lead.first_name || ""} ${lead.surname || ""}`,
+      subject: `New Lead Assigned - ${customerName}`,
       text: 
 `New lead assigned:
 
-${lead.title || ""} ${lead.first_name || ""} ${lead.surname || ""}
+${lead.title || ""} ${customerName}
 DOB: ${lead.dob || ""}
 Amount Requested: ${lead.amount_requested || ""} over ${lead.loan_term || ""} weeks
 Income: ${lead.income || ""}
@@ -109,7 +111,7 @@ Postcode: ${lead.postcode || ""}
 Best Time To Call: ${lead.best_call_time || ""}
 Collection Method: ${lead.method_collection || ""}
 
-➡️ Mark as Issued: ${issueLink}`,
+➡️ Mark Issued for ${customerName}: ${issueLink}`,
     });
 
     // 🔄 Update loan application with agent NAME + status + timestamp
@@ -117,7 +119,7 @@ Collection Method: ${lead.method_collection || ""}
       .from("loan_applications")
       .update({
         status: "In Progress",
-        assigned_agent: agent.name,   // ✅ store name instead of UUID
+        assigned_agent: agent.name,
         assigned_time: new Date().toISOString()
       })
       .eq("id", lead.id);
@@ -310,15 +312,68 @@ app.get("/avg-tti", async (req, res) => {
 
 
 
-// --- Mark issued via token ---
+// --- Mark issued confirmation page ---
 app.get("/mark-issued/:token", async (req, res) => {
   const { token } = req.params;
   const parts = token.split("-");
-  
-  // UUIDs are always 5 parts separated by "-"
-  const leadId = parts.slice(0, 5).join("-"); 
-  const secret = parts.slice(5).join("-"); // optional, keep if you want to verify later
 
+  // Extract UUID (5 parts of the token)
+  const leadId = parts.slice(0, 5).join("-");
+  if (!leadId) {
+    return res.status(400).send("Invalid token");
+  }
+
+  try {
+    // Fetch lead info (we need customer name)
+    const { data: lead, error } = await supabase
+      .from("loan_applications")
+      .select("first_name, surname")
+      .eq("id", leadId)
+      .single();
+
+    if (error || !lead) throw error;
+
+    // Render confirmation HTML
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Confirm Issued</title>
+        <style>
+          body { font-family: Arial, sans-serif; text-align: center; padding: 40px; }
+          h2 { color: #2563eb; }
+          button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+          }
+          button:hover { background: #1e40af; }
+        </style>
+      </head>
+      <body>
+        <h2>Mark ${lead.first_name} ${lead.surname}'s loan as Issued?</h2>
+        <form method="POST" action="/confirm-issued/${token}">
+          <button type="submit">✅ Confirm Mark as Issued</button>
+        </form>
+      </body>
+      </html>
+    `);
+  } catch (err) {
+    console.error("❌ Error showing confirm page:", err);
+    res.status(500).send("Error loading confirmation page");
+  }
+});
+
+// --- Confirm mark issued ---
+app.post("/confirm-issued/:token", async (req, res) => {
+  const { token } = req.params;
+  const parts = token.split("-");
+
+  const leadId = parts.slice(0, 5).join("-");
   if (!leadId) {
     return res.status(400).send("Invalid token");
   }
@@ -334,7 +389,21 @@ app.get("/mark-issued/:token", async (req, res) => {
 
     if (error) throw error;
 
-    res.send("✅ Lead successfully marked as Issued");
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Issued Confirmed</title>
+        <style>
+          body { font-family: Arial, sans-serif; text-align: center; padding: 40px; }
+          h2 { color: green; }
+        </style>
+      </head>
+      <body>
+        <h2>✅ Loan has been successfully marked as Issued</h2>
+      </body>
+      </html>
+    `);
   } catch (err) {
     console.error("❌ Error marking issued:", err);
     res.status(500).send("Error marking issued");
@@ -344,10 +413,12 @@ app.get("/mark-issued/:token", async (req, res) => {
 
 
 
+
 // --- Start server ---
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
 
