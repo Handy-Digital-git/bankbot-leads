@@ -440,6 +440,30 @@ app.post("/confirm-issued/:token", async (req, res) => {
 
 
 
+app.post("/assign-branch", async (req, res) => {
+  const { leadId, branchId } = req.body;
+
+  if (!leadId || !branchId) {
+    return res.status(400).json({ success: false, error: "Missing leadId or branchId" });
+  }
+
+  try {
+    const { error } = await supabase
+      .from("loan_applications")
+      .update({ assigned_branch: branchId })
+      .eq("id", leadId);
+
+    if (error) throw error;
+
+    res.json({ success: true, message: "Branch assigned successfully" });
+  } catch (err) {
+    console.error("❌ Error assigning branch:", err.message);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+
+
 
 
 
@@ -448,6 +472,7 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
 
 
