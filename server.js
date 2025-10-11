@@ -278,12 +278,58 @@ app.post("/lead-created", async (req, res) => {
 // 📊 Average Time To Issue (TTI) per agent
 app.get("/avg-tti", async (req, res) => {
   try {
-    const { data, error } = await supabase.rpc("get_avg_tti");
+    const { company_name, branch_id } = req.query;
+
+    // Build dynamic filter params
+    const filterParams = {};
+    if (company_name) filterParams.company_name = company_name;
+    if (branch_id) filterParams.assigned_branch = branch_id;
+
+    // Call RPC and apply filters if provided
+    let query = supabase.rpc("get_avg_tti");
+
+    if (Object.keys(filterParams).length > 0) {
+      // Fetch all data first, then filter client-side
+      const { data, error } = await query;
+      if (error) throw error;
+
+      const filtered = data.filter(row => {
+        const matchesCompany = !company_name || row.company_name === company_name;
+        const matchesBranch = !branch_id || row.assigned_branch === branch_id;
+        return matchesCompany && matchesBranch;
+      });
+
+      // Format intervals into human-readable form
+      const formatted = filtered.map(row => {
+        const interval = row.avg_tti_interval; // e.g. "1 day 03:22:00"
+        let days = 0, hours = 0, mins = 0;
+
+        if (interval) {
+          const match = interval.match(/(\d+)\s+days?/);
+          if (match) days = parseInt(match[1], 10);
+
+          const timeMatch = interval.match(/(\d+):(\d+):/);
+          if (timeMatch) {
+            hours = parseInt(timeMatch[1], 10);
+            mins = parseInt(timeMatch[2], 10);
+          }
+        }
+
+        return {
+          assigned_agent: row.assigned_agent,
+          avg_tti: `${days}d ${hours}h ${mins}m`,
+        };
+      });
+
+      return res.json({ success: true, data: formatted });
+    }
+
+    // No filters → just run as usual
+    const { data, error } = await query;
     if (error) throw error;
 
-    // Convert interval to human-readable days/hours/mins
     const formatted = data.map(row => {
-      const interval = row.avg_tti_interval; // e.g. "1 day 03:22:00"
+      const interval = row.avg_tti_interval;
       let days = 0, hours = 0, mins = 0;
 
       if (interval) {
@@ -299,7 +345,7 @@ app.get("/avg-tti", async (req, res) => {
 
       return {
         assigned_agent: row.assigned_agent,
-        avg_tti: `${days}d ${hours}h ${mins}m`
+        avg_tti: `${days}d ${hours}h ${mins}m`,
       };
     });
 
@@ -472,6 +518,7 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
 
 
