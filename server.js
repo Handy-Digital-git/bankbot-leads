@@ -275,14 +275,14 @@ app.post("/lead-created", async (req, res) => {
 });
 
 
-// 📊 Average Time To Issue (TTI) per agent
 app.get("/avg-tti", async (req, res) => {
   try {
     const { company_name, branch_id } = req.query;
+    console.log("📊 Fetching TTI | Company:", company_name, "| Branch:", branch_id);
 
     let query = supabase
       .from("loan_applications")
-      .select("assigned_agent, assigned_time, issued_time, company_name, assigned_branch")
+      .select("assigned_agent, assigned_time, issued_time, company_name, assigned_branch, status")
       .eq("status", "Issued");
 
     if (company_name) query = query.eq("company_name", company_name);
@@ -290,6 +290,8 @@ app.get("/avg-tti", async (req, res) => {
 
     const { data, error } = await query;
     if (error) throw error;
+
+    console.log("📦 Returned rows:", data.length);
 
     const results = {};
     data.forEach((row) => {
@@ -314,6 +316,7 @@ app.get("/avg-tti", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 
 
@@ -479,6 +482,7 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
 
 
