@@ -275,47 +275,41 @@ app.post("/lead-created", async (req, res) => {
 });
 
 
+// 📊 Average Time To Issue (TTI) per agent
 app.get("/avg-tti", async (req, res) => {
   try {
-    const { company_name, branch_id } = req.query;
-    console.log("📊 Fetching TTI | Company:", company_name, "| Branch:", branch_id);
-
-    let query = supabase
-      .from("loan_applications")
-      .select("assigned_agent, assigned_time, issued_time, company_name, assigned_branch, status")
-      .eq("status", "Issued");
-
-    if (company_name) query = query.eq("company_name", company_name);
-    if (branch_id) query = query.eq("assigned_branch", branch_id);
-
-    const { data, error } = await query;
+    const { data, error } = await supabase.rpc("get_avg_tti");
     if (error) throw error;
 
-    console.log("📦 Returned rows:", data.length);
+    // Convert interval to human-readable days/hours/mins
+    const formatted = data.map(row => {
+      const interval = row.avg_tti_interval; // e.g. "1 day 03:22:00"
+      let days = 0, hours = 0, mins = 0;
 
-    const results = {};
-    data.forEach((row) => {
-      if (row.assigned_agent && row.assigned_time && row.issued_time) {
-        const diffMs = new Date(row.issued_time) - new Date(row.assigned_time);
-        if (!results[row.assigned_agent]) results[row.assigned_agent] = [];
-        results[row.assigned_agent].push(diffMs);
+      if (interval) {
+        const match = interval.match(/(\d+)\s+days?/);
+        if (match) days = parseInt(match[1], 10);
+
+        const timeMatch = interval.match(/(\d+):(\d+):/);
+        if (timeMatch) {
+          hours = parseInt(timeMatch[1], 10);
+          mins = parseInt(timeMatch[2], 10);
+        }
       }
-    });
 
-    const formatted = Object.entries(results).map(([agent, times]) => {
-      const avg = times.reduce((a, b) => a + b, 0) / times.length;
-      const days = Math.floor(avg / (1000 * 60 * 60 * 24));
-      const hours = Math.floor((avg % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-      const mins = Math.floor((avg % (1000 * 60 * 60)) / (1000 * 60));
-      return { assigned_agent: agent, avg_tti: `${days}d ${hours}h ${mins}m` };
+      return {
+        assigned_agent: row.assigned_agent,
+        avg_tti: `${days}d ${hours}h ${mins}m`,
+      };
     });
 
     res.json({ success: true, data: formatted });
   } catch (err) {
-    console.error("❌ Error fetching TTI averages:", err);
+    console.error("❌ Error fetching TTI averages:", err.message);
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 
 
@@ -482,6 +476,7 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
 
 
