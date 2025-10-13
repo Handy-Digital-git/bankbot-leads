@@ -87,7 +87,7 @@ Postcode: ${lead.postcode || ""}
 Best Time To Call: ${lead.best_call_time || ""}
 Collection Method: ${lead.method_collection || ""}
 
-➡️ Mark as Issued: ${issueLink}`,
+➡️ Update loan status by clicking the link below this message: ${issueLink}`,
       from: twilioNumber,
       to: agent.phone,
     });
@@ -110,7 +110,7 @@ Postcode: ${lead.postcode || ""}
 Best Time To Call: ${lead.best_call_time || ""}
 Collection Method: ${lead.method_collection || ""}
 
-➡️ Mark as Issued: ${issueLink}`,
+➡️ Update loan status by clicking the link below this message: ${issueLink}`,
     });
 
     // 🔄 Update loan application with agent NAME + status + timestamp
@@ -587,4 +587,5 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
