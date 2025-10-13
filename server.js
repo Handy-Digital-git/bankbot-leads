@@ -238,60 +238,133 @@ app.get("/mark-issued/:token", async (req, res) => {
     if (error || !lead) throw error;
 
     res.send(`
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Update Loan Status - ${lead.first_name} ${lead.surname}</title>
-        <style>
-          body {
-            font-family: Arial, sans-serif;
-            text-align: center;
-            padding: 40px;
-            background-color: #f9fafb;
-          }
-          h2 { color: #2563eb; }
-          button {
-            background: #2563eb;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            font-size: 16px;
-            border-radius: 6px;
-            cursor: pointer;
-            margin: 10px;
-          }
-          button:hover { background: #1e40af; }
-          .decline { background: #dc2626; }
-          .contact { background: #ca8a04; }
-          .noneed { background: #9333ea; }
-          .decline:hover { background: #991b1b; }
-          .contact:hover { background: #92400e; }
-          .noneed:hover { background: #7e22ce; }
-        </style>
-      </head>
-      <body>
-        <h2>Update loan status for ${lead.first_name} ${lead.surname}</h2>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Loan Status Update - ${lead.first_name} ${lead.surname}</title>
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-dark: #1e40af;
+      --decline: #dc2626;
+      --contact: #ca8a04;
+      --noneed: #9333ea;
+      --bg: #f9fafb;
+      --card-bg: #ffffff;
+      --shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
+    }
 
-        <form method="POST" action="/confirm-status/${token}?status=Issued">
-          <button type="submit">✅ Mark as Issued</button>
-        </form>
+    body {
+      font-family: "Inter", Arial, sans-serif;
+      background: var(--bg);
+      margin: 0;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
 
-        <form method="POST" action="/confirm-status/${token}?status=Agent Declined">
-          <button type="submit" class="decline">❌ Agent Declined</button>
-        </form>
+    .card {
+      background: var(--card-bg);
+      box-shadow: var(--shadow);
+      border-radius: 14px;
+      padding: 40px 30px;
+      text-align: center;
+      max-width: 420px;
+      width: 90%;
+      animation: fadeIn 0.4s ease-out;
+    }
 
-        <form method="POST" action="/confirm-status/${token}?status=Unable to Contact">
-          <button type="submit" class="contact">📞 Unable to Contact</button>
-        </form>
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(20px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
 
-        <form method="POST" action="/confirm-status/${token}?status=No Longer Needed">
-          <button type="submit" class="noneed">💭 No Longer Needed</button>
-        </form>
-      </body>
-      </html>
-    `);
+    h1 {
+      font-size: 1.5rem;
+      color: var(--primary-dark);
+      margin-bottom: 0.5rem;
+    }
+
+    p {
+      color: #4b5563;
+      margin-bottom: 1.5rem;
+      line-height: 1.4;
+    }
+
+    .button-grid {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    button {
+      border: none;
+      border-radius: 8px;
+      color: white;
+      font-size: 1rem;
+      font-weight: 600;
+      padding: 12px;
+      cursor: pointer;
+      transition: background 0.2s ease, transform 0.15s ease;
+    }
+
+    button:hover {
+      transform: translateY(-2px);
+    }
+
+    .issued { background: var(--primary); }
+    .issued:hover { background: var(--primary-dark); }
+
+    .decline { background: var(--decline); }
+    .decline:hover { background: #991b1b; }
+
+    .contact { background: var(--contact); }
+    .contact:hover { background: #92400e; }
+
+    .noneed { background: var(--noneed); }
+    .noneed:hover { background: #7e22ce; }
+
+    footer {
+      margin-top: 2rem;
+      font-size: 0.8rem;
+      color: #9ca3af;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Update Loan Status</h1>
+    <p>Please select the correct outcome for <strong>${lead.first_name} ${lead.surname}</strong>.</p>
+
+    <div class="button-grid">
+      <form method="POST" action="/confirm-status/${token}?status=Issued">
+        <button type="submit" class="issued">✅ Mark as Issued</button>
+      </form>
+
+      <form method="POST" action="/confirm-status/${token}?status=Agent Declined">
+        <button type="submit" class="decline">❌ Agent Declined</button>
+      </form>
+
+      <form method="POST" action="/confirm-status/${token}?status=Unable to Contact">
+        <button type="submit" class="contact">📞 Unable to Contact</button>
+      </form>
+
+      <form method="POST" action="/confirm-status/${token}?status=No Longer Needed">
+        <button type="submit" class="noneed">💭 No Longer Needed</button>
+      </form>
+    </div>
+
+    <footer>
+      Powered by <strong>Handy Digital</strong>
+    </footer>
+  </div>
+</body>
+</html>
+`);
   } catch (err) {
     console.error("❌ Error showing confirm page:", err);
     res.status(500).send("Error loading confirmation page");
@@ -587,5 +660,6 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
 
