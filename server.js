@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import cors from "cors";
 import crypto from "crypto";
+import axios from "axios";
 
 // 🔑 Generate a unique token for marking issued
 function generateIssueToken(leadId) {
@@ -71,14 +72,12 @@ app.post("/assign-lead", async (req, res) => {
     const token = generateIssueToken(lead.id);
     const issueLink = `https://bankbot-leads.onrender.com/mark-issued/${token}`;
 
-    const customerName = `${lead.first_name || ""} ${lead.surname || ""}`.trim();
-
     // 📩 SMS via Twilio
     await twilioClient.messages.create({
       body: 
 `New lead assigned:
 
-${lead.title || ""} ${customerName}
+${lead.title || ""} ${lead.first_name || ""} ${lead.surname || ""}
 DOB: ${lead.dob || ""}
 Amount Requested: ${lead.amount_requested || ""} over ${lead.loan_term || ""} weeks
 Income: ${lead.income || ""}
@@ -88,20 +87,20 @@ Postcode: ${lead.postcode || ""}
 Best Time To Call: ${lead.best_call_time || ""}
 Collection Method: ${lead.method_collection || ""}
 
-Once you have completed this loan, mark as issued with the link below: ${issueLink}`,
+➡️ Mark as Issued: ${issueLink}`,
       from: twilioNumber,
       to: agent.phone,
     });
 
-    // 📧 Email via SendGrid
+    // 📧 Email via SendGrid (optional — includes issue link too)
     await sgMail.send({
       to: agent.email,
       from: "support@browsair.me",
-      subject: `New Lead Assigned - ${customerName}`,
+      subject: `New Lead Assigned - ${lead.first_name || ""} ${lead.surname || ""}`,
       text: 
 `New lead assigned:
 
-${lead.title || ""} ${customerName}
+${lead.title || ""} ${lead.first_name || ""} ${lead.surname || ""}
 DOB: ${lead.dob || ""}
 Amount Requested: ${lead.amount_requested || ""} over ${lead.loan_term || ""} weeks
 Income: ${lead.income || ""}
@@ -111,7 +110,7 @@ Postcode: ${lead.postcode || ""}
 Best Time To Call: ${lead.best_call_time || ""}
 Collection Method: ${lead.method_collection || ""}
 
-➡️ Mark Issued for ${customerName}: ${issueLink}`,
+➡️ Mark as Issued: ${issueLink}`,
     });
 
     // 🔄 Update loan application with agent NAME + status + timestamp
@@ -119,7 +118,7 @@ Collection Method: ${lead.method_collection || ""}
       .from("loan_applications")
       .update({
         status: "In Progress",
-        assigned_agent: agent.name,
+        assigned_agent: agent.name,   // ✅ store name instead of UUID
         assigned_time: new Date().toISOString()
       })
       .eq("id", lead.id);
@@ -189,6 +188,10 @@ app.post("/send-template", async (req, res) => {
   }
 });
 
+
+
+
+
 // --- Mark as issued route ---
 app.post("/mark-issued", async (req, res) => {
   const { lead } = req.body;
@@ -214,6 +217,143 @@ app.post("/mark-issued", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
+
+
+
+// --- Mark issued via token ---
+app.get("/mark-issued/:token", async (req, res) => {
+  const { token } = req.params;
+  const leadId = token.split("-")[0];
+
+  if (!leadId) {
+    return res.status(400).send("Invalid token");
+  }
+
+  try {
+    const { data: lead, error } = await supabase
+      .from("loan_applications")
+      .select("first_name, surname")
+      .eq("id", leadId)
+      .single();
+
+    if (error || !lead) throw error;
+
+    res.send(`
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Update Loan Status - ${lead.first_name} ${lead.surname}</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 40px;
+            background-color: #f9fafb;
+          }
+          h2 { color: #2563eb; }
+          button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 10px;
+          }
+          button:hover { background: #1e40af; }
+          .decline { background: #dc2626; }
+          .contact { background: #ca8a04; }
+          .no-need { background: #9333ea; }
+          .decline:hover { background: #991b1b; }
+          .contact:hover { background: #92400e; }
+          .no-need:hover { background: #7e22ce; }
+        </style>
+      </head>
+      <body>
+        <h2>Update status for ${lead.first_name} ${lead.surname}</h2>
+
+        <form method="POST" action="/confirm-status/${token}?status=Issued">
+          <button type="submit">✅ Mark as Issued</button>
+        </form>
+
+        <form method="POST" action="/confirm-status/${token}?status=Agent Declined">
+          <button type="submit" class="decline">❌ Agent Declined</button>
+        </form>
+
+        <form method="POST" action="/confirm-status/${token}?status=Unable to Contact">
+          <button type="submit" class="contact">📞 Unable to Contact</button>
+        </form>
+
+        <form method="POST" action="/confirm-status/${token}?status=No Longer Needed">
+          <button type="submit" class="no-need">💭 No Longer Needed</button>
+        </form>
+      </body>
+      </html>
+    `);
+  } catch (err) {
+    console.error("❌ Error showing confirm page:", err);
+    res.status(500).send("Error loading confirmation page");
+  }
+});
+
+app.post("/confirm-status/:token", async (req, res) => {
+  const { token } = req.params;
+  const leadId = token.split("-")[0];
+  const status = req.query.status || "Unknown";
+
+  if (!leadId) {
+    return res.status(400).send("Invalid token");
+  }
+
+  try {
+    const { data: lead, error: fetchError } = await supabase
+      .from("loan_applications")
+      .select("first_name, surname")
+      .eq("id", leadId)
+      .single();
+
+    if (fetchError || !lead) throw fetchError;
+
+    // 🧾 Update status and timestamp
+    const { error } = await supabase
+      .from("loan_applications")
+      .update({
+        status,
+        issued_time: new Date().toISOString(),
+      })
+      .eq("id", leadId);
+
+    if (error) throw error;
+
+    res.send(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Status Updated</title>
+        <style>
+          body { font-family: Arial, sans-serif; text-align: center; padding: 40px; background: #f9fafb; }
+          h2 { color: #2563eb; }
+        </style>
+      </head>
+      <body>
+        <h2>✅ ${lead.first_name} ${lead.surname}'s loan updated to: "${status}"</h2>
+        <p>You can now close this page.</p>
+      </body>
+      </html>
+    `);
+  } catch (err) {
+    console.error("❌ Error updating loan status:", err);
+    res.status(500).send("Error updating status");
+  }
+});
+
+
+
+
 
 // --- Webhook: lead-created ---
 app.post("/lead-created", async (req, res) => {
@@ -275,16 +415,42 @@ app.post("/lead-created", async (req, res) => {
 });
 
 
-// 📊 Average Time To Issue (TTI) per agent
+// 📊 Average Time To Issue (TTI) per agent (filtered by company + branch)
 app.get("/avg-tti", async (req, res) => {
   try {
+    const { company_name, branch } = req.query; // 👈 now using 'branch'
+    console.log("📥 /avg-tti request received:", { company_name, branch });
+
+    // 🧩 Call the RPC
     const { data, error } = await supabase.rpc("get_avg_tti");
     if (error) throw error;
 
-    // Convert interval to human-readable days/hours/mins
-    const formatted = data.map(row => {
+    console.log("📊 Raw rows returned from RPC:", data?.length || 0);
+
+    // 🧮 Filter logic
+    const filtered = data.filter((row) => {
+      const companyMatch =
+        !company_name ||
+        (row.company_name &&
+          row.company_name.trim().toLowerCase() ===
+            company_name.trim().toLowerCase());
+
+      const branchMatch =
+        !branch ||
+        (row.assigned_branch &&
+          row.assigned_branch.toString() === branch.toString());
+
+      return companyMatch && branchMatch;
+    });
+
+    console.log("✅ Filtered rows after match:", filtered?.length || 0);
+
+    // 🕓 Format intervals
+    const formatted = filtered.map((row) => {
       const interval = row.avg_tti_interval; // e.g. "1 day 03:22:00"
-      let days = 0, hours = 0, mins = 0;
+      let days = 0,
+        hours = 0,
+        mins = 0;
 
       if (interval) {
         const match = interval.match(/(\d+)\s+days?/);
@@ -299,6 +465,7 @@ app.get("/avg-tti", async (req, res) => {
 
       return {
         assigned_agent: row.assigned_agent,
+        company_name: row.company_name,
         avg_tti: `${days}d ${hours}h ${mins}m`,
       };
     });
@@ -309,139 +476,6 @@ app.get("/avg-tti", async (req, res) => {
     res.status(500).json({ success: false, error: err.message });
   }
 });
-
-
-
-
-
-
-
-// --- Mark issued confirmation page ---
-// --- Mark issued confirmation page ---
-app.get("/mark-issued/:token", async (req, res) => {
-  const { token } = req.params;
-  const parts = token.split("-");
-
-  // Extract UUID (5 parts of the token)
-  const leadId = parts.slice(0, 5).join("-");
-  if (!leadId) {
-    return res.status(400).send("Invalid token");
-  }
-
-  try {
-    // Fetch lead info (we need customer name)
-    const { data: lead, error } = await supabase
-      .from("loan_applications")
-      .select("first_name, surname")
-      .eq("id", leadId)
-      .single();
-
-    if (error || !lead) throw error;
-
-    // Render confirmation HTML
-    res.send(`
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Confirm Loan Issued - ${lead.first_name} ${lead.surname}</title>
-
-        <!-- SEO Meta -->
-        <meta name="description" content="Confirm marking ${lead.first_name} ${lead.surname}'s loan as issued.">
-        
-        <!-- Open Graph (for WhatsApp, Messenger, etc.) -->
-        <meta property="og:title" content="Confirm Loan Issued for ${lead.first_name} ${lead.surname}" />
-        <meta property="og:description" content="Click confirm below to mark this loan as issued." />
-        <meta property="og:type" content="website" />
-        <meta property="og:url" content="https://bankbot-leads.onrender.com/mark-issued/${token}" />
-        
-        <!-- Twitter Card -->
-        <meta name="twitter:card" content="summary" />
-        <meta name="twitter:title" content="Confirm Loan Issued for ${lead.first_name} ${lead.surname}" />
-        <meta name="twitter:description" content="Click confirm below to mark this loan as issued." />
-
-        <style>
-          body { font-family: Arial, sans-serif; text-align: center; padding: 40px; }
-          h2 { color: #2563eb; }
-          button {
-            background: #2563eb;
-            color: white;
-            border: none;
-            padding: 12px 24px;
-            font-size: 16px;
-            border-radius: 6px;
-            cursor: pointer;
-          }
-          button:hover { background: #1e40af; }
-        </style>
-      </head>
-      <body>
-        <h2>Mark ${lead.first_name} ${lead.surname}'s loan as Issued?</h2>
-        <form method="POST" action="/confirm-issued/${token}">
-          <button type="submit">✅ Confirm Mark as Issued</button>
-        </form>
-      </body>
-      </html>
-    `);
-  } catch (err) {
-    console.error("❌ Error showing confirm page:", err);
-    res.status(500).send("Error loading confirmation page");
-  }
-});
-
-
-// --- Confirm mark issued ---
-app.post("/confirm-issued/:token", async (req, res) => {
-  const { token } = req.params;
-  const parts = token.split("-");
-
-  const leadId = parts.slice(0, 5).join("-");
-  if (!leadId) {
-    return res.status(400).send("Invalid token");
-  }
-
-  try {
-    // Fetch lead details for name
-    const { data: lead, error: fetchError } = await supabase
-      .from("loan_applications")
-      .select("first_name, surname")
-      .eq("id", leadId)
-      .single();
-
-    if (fetchError || !lead) throw fetchError;
-
-    // Update status to Issued
-    const { error } = await supabase
-      .from("loan_applications")
-      .update({
-        status: "Issued",
-        issued_time: new Date().toISOString()
-      })
-      .eq("id", leadId);
-
-    if (error) throw error;
-
-    res.send(`
-      <!DOCTYPE html>
-      <html>
-      <head>
-        <title>Loan Marked as Issued</title>
-        <meta property="og:title" content="Loan Issued for ${lead.first_name} ${lead.surname}" />
-        <meta property="og:description" content="This loan has been successfully marked as issued." />
-        <meta property="og:type" content="website" />
-      </head>
-      <body style="font-family: Arial, sans-serif; text-align: center; padding: 40px;">
-        <h2>✅ ${lead.first_name} ${lead.surname}'s loan has been successfully marked as Issued</h2>
-      </body>
-      </html>
-    `);
-  } catch (err) {
-    console.error("❌ Error marking issued:", err);
-    res.status(500).send("Error marking issued");
-  }
-});
-
 
 
 app.post("/assign-branch", async (req, res) => {
@@ -466,8 +500,95 @@ app.post("/assign-branch", async (req, res) => {
   }
 });
 
+// (Optional) tiny helper – in case a raw UK number slips through
+const toE164UK = (n) => {
+  if (!n) return n;
+  const digits = String(n).replace(/\D/g, "");
+  if (digits.startsWith("44")) return `+${digits}`;
+  if (digits.startsWith("0")) return `+44${digits.slice(1)}`;
+  if (digits.startsWith("+")) return digits;
+  return `+44${digits}`;
+};
+// call-lead.js (part of your Express server)
+app.post("/call-lead", async (req, res) => {
+  const lead = req.body || {};
+  const phone = toE164UK(lead.phone_number); // 👈 matches your Supabase field
+
+  console.log("📞 Received lead:", lead.first_name, phone);
+
+  try {
+    const payload = {
+  assistantId: process.env.VAPI_ASSISTANT_ID,
+  phoneNumberId: process.env.VAPI_PHONE_NUMBER_ID,
+  customer: { number: phone },
+  assistantOverrides: {
+    variableValues: {
+      name: lead.first_name,
+      dob: lead.dob,
+      postcode: lead.postcode,
+      amount_requested: String(lead.amount_requested ?? ""),
+      preferred_call_time: lead.preferred_call_time || "",
+      reason_for_borrowing: lead.reason_for_borrowing || "",
+    },
+  },
+  metadata: {
+    lead_id: lead.id,
+    company_name: lead.company_name,
+  },
+  webhookUrl: process.env.VAPI_WEBHOOK_URL
+};
 
 
+    const resp = await axios.post("https://api.vapi.ai/call", payload, {
+      headers: {
+        Authorization: `Bearer ${process.env.VAPI_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      timeout: 15000
+    });
+
+    console.log("✅ Vapi call created:", resp.data);
+    res.json({ success: true, vapi: resp.data });
+  } catch (err) {
+    console.error("❌ Vapi call error:", err.response?.data || err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+app.post("/vapi/callback", async (req, res) => {
+  const event = req.body;
+  console.log("📨 Vapi event:", JSON.stringify(event, null, 2));
+
+  const leadId = event.metadata?.lead_id;
+  const callId = event.id;
+  const transcript = event.transcript?.text || null;
+  const status = event.status || event.type || "unknown";
+
+  if (!leadId) {
+    console.warn("⚠️ No lead_id in event metadata – cannot match");
+    return res.sendStatus(200);
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from("voice_call_1")
+      .insert({
+        lead_id: leadId,
+        vapi_call_id: callId,
+        phone_number: event.customer?.number,
+        transcript,
+        status,
+      });
+
+    if (error) throw error;
+    console.log(`✅ Logged Vapi call for lead ${leadId}`);
+  } catch (err) {
+    console.error("❌ Failed to store call:", err.message);
+  }
+
+  res.sendStatus(200);
+});
 
 
 
@@ -476,12 +597,3 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
-
-
-
-
-
-
-
-
-
