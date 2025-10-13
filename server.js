@@ -224,11 +224,9 @@ app.post("/mark-issued", async (req, res) => {
 // --- Mark issued via token ---
 app.get("/mark-issued/:token", async (req, res) => {
   const { token } = req.params;
-  const leadId = token.split("-")[0];
-
-  if (!leadId) {
-    return res.status(400).send("Invalid token");
-  }
+  const parts = token.split("-");
+  const leadId = parts.slice(0, 5).join("-");
+  if (!leadId) return res.status(400).send("Invalid token");
 
   try {
     const { data: lead, error } = await supabase
@@ -243,8 +241,8 @@ app.get("/mark-issued/:token", async (req, res) => {
       <!DOCTYPE html>
       <html lang="en">
       <head>
-        <meta charset="UTF-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Update Loan Status - ${lead.first_name} ${lead.surname}</title>
         <style>
           body {
@@ -267,14 +265,14 @@ app.get("/mark-issued/:token", async (req, res) => {
           button:hover { background: #1e40af; }
           .decline { background: #dc2626; }
           .contact { background: #ca8a04; }
-          .no-need { background: #9333ea; }
+          .noneed { background: #9333ea; }
           .decline:hover { background: #991b1b; }
           .contact:hover { background: #92400e; }
-          .no-need:hover { background: #7e22ce; }
+          .noneed:hover { background: #7e22ce; }
         </style>
       </head>
       <body>
-        <h2>Update status for ${lead.first_name} ${lead.surname}</h2>
+        <h2>Update loan status for ${lead.first_name} ${lead.surname}</h2>
 
         <form method="POST" action="/confirm-status/${token}?status=Issued">
           <button type="submit">✅ Mark as Issued</button>
@@ -289,7 +287,7 @@ app.get("/mark-issued/:token", async (req, res) => {
         </form>
 
         <form method="POST" action="/confirm-status/${token}?status=No Longer Needed">
-          <button type="submit" class="no-need">💭 No Longer Needed</button>
+          <button type="submit" class="noneed">💭 No Longer Needed</button>
         </form>
       </body>
       </html>
@@ -300,34 +298,26 @@ app.get("/mark-issued/:token", async (req, res) => {
   }
 });
 
+
 app.post("/confirm-status/:token", async (req, res) => {
   const { token } = req.params;
-  const leadId = token.split("-")[0];
+  const parts = token.split("-");
+  const leadId = parts.slice(0, 5).join("-");
   const status = req.query.status || "Unknown";
 
-  if (!leadId) {
-    return res.status(400).send("Invalid token");
-  }
+  if (!leadId) return res.status(400).send("Invalid token");
 
   try {
-    const { data: lead, error: fetchError } = await supabase
+    const { data: lead } = await supabase
       .from("loan_applications")
       .select("first_name, surname")
       .eq("id", leadId)
       .single();
 
-    if (fetchError || !lead) throw fetchError;
-
-    // 🧾 Update status and timestamp
-    const { error } = await supabase
+    await supabase
       .from("loan_applications")
-      .update({
-        status,
-        issued_time: new Date().toISOString(),
-      })
+      .update({ status, issued_time: new Date().toISOString() })
       .eq("id", leadId);
-
-    if (error) throw error;
 
     res.send(`
       <!DOCTYPE html>
@@ -340,13 +330,13 @@ app.post("/confirm-status/:token", async (req, res) => {
         </style>
       </head>
       <body>
-        <h2>✅ ${lead.first_name} ${lead.surname}'s loan updated to: "${status}"</h2>
+        <h2>✅ ${lead.first_name} ${lead.surname}'s loan updated to "${status}"</h2>
         <p>You can now close this page.</p>
       </body>
       </html>
     `);
   } catch (err) {
-    console.error("❌ Error updating loan status:", err);
+    console.error("❌ Error updating status:", err);
     res.status(500).send("Error updating status");
   }
 });
@@ -597,3 +587,4 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
