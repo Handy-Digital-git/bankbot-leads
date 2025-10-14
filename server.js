@@ -431,10 +431,11 @@ app.post("/lead-created", async (req, res) => {
   try {
     // Fetch managers for this company
     const { data: managers, error: mgrError } = await supabase
-      .from("users") // or company_users table
-      .select("id, email, phone, role, company_name")
-      .eq("company_name", newLead.company_name)
-      .eq("role", "manager");
+  .from("users")
+  .select("id, email, phone, role, company_name, lead_notifications")
+  .eq("company_name", newLead.company_name)
+  .eq("role", "manager")
+  .eq("lead_notifications", true); // ✅ only notify opted-in users
 
     if (mgrError) throw mgrError;
 
@@ -660,6 +661,7 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
 
 
