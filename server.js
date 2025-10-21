@@ -87,7 +87,7 @@ Postcode: ${lead.postcode || ""}
 Best Time To Call: ${lead.best_call_time || ""}
 Collection Method: ${lead.method_collection || ""}
 
-➡️ Update loan status by clicking the link below this message: ${issueLink}`,
+➡️ Mark as Issued: ${issueLink}`,
       from: twilioNumber,
       to: agent.phone,
     });
@@ -110,7 +110,7 @@ Postcode: ${lead.postcode || ""}
 Best Time To Call: ${lead.best_call_time || ""}
 Collection Method: ${lead.method_collection || ""}
 
-➡️ Update loan status by clicking the link below this message: ${issueLink}`,
+➡️ Mark as Issued: ${issueLink}`,
     });
 
     // 🔄 Update loan application with agent NAME + status + timestamp
@@ -224,9 +224,11 @@ app.post("/mark-issued", async (req, res) => {
 // --- Mark issued via token ---
 app.get("/mark-issued/:token", async (req, res) => {
   const { token } = req.params;
-  const parts = token.split("-");
-  const leadId = parts.slice(0, 5).join("-");
-  if (!leadId) return res.status(400).send("Invalid token");
+  const leadId = token.split("-")[0];
+
+  if (!leadId) {
+    return res.status(400).send("Invalid token");
+  }
 
   try {
     const { data: lead, error } = await supabase
@@ -238,159 +240,94 @@ app.get("/mark-issued/:token", async (req, res) => {
     if (error || !lead) throw error;
 
     res.send(`
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Loan Status Update - ${lead.first_name} ${lead.surname}</title>
-  <style>
-    :root {
-      --primary: #2563eb;
-      --primary-dark: #1e40af;
-      --decline: #dc2626;
-      --contact: #ca8a04;
-      --noneed: #9333ea;
-      --bg: #f9fafb;
-      --card-bg: #ffffff;
-      --shadow: 0 4px 10px rgba(0, 0, 0, 0.08);
-    }
+      <!DOCTYPE html>
+      <html lang="en">
+      <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Update Loan Status - ${lead.first_name} ${lead.surname}</title>
+        <style>
+          body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            padding: 40px;
+            background-color: #f9fafb;
+          }
+          h2 { color: #2563eb; }
+          button {
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 10px;
+          }
+          button:hover { background: #1e40af; }
+          .decline { background: #dc2626; }
+          .contact { background: #ca8a04; }
+          .no-need { background: #9333ea; }
+          .decline:hover { background: #991b1b; }
+          .contact:hover { background: #92400e; }
+          .no-need:hover { background: #7e22ce; }
+        </style>
+      </head>
+      <body>
+        <h2>Update status for ${lead.first_name} ${lead.surname}</h2>
 
-    body {
-      font-family: "Inter", Arial, sans-serif;
-      background: var(--bg);
-      margin: 0;
-      padding: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-    }
+        <form method="POST" action="/confirm-status/${token}?status=Issued">
+          <button type="submit">✅ Mark as Issued</button>
+        </form>
 
-    .card {
-      background: var(--card-bg);
-      box-shadow: var(--shadow);
-      border-radius: 14px;
-      padding: 40px 30px;
-      text-align: center;
-      max-width: 420px;
-      width: 90%;
-      animation: fadeIn 0.4s ease-out;
-    }
+        <form method="POST" action="/confirm-status/${token}?status=Agent Declined">
+          <button type="submit" class="decline">❌ Agent Declined</button>
+        </form>
 
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(20px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
+        <form method="POST" action="/confirm-status/${token}?status=Unable to Contact">
+          <button type="submit" class="contact">📞 Unable to Contact</button>
+        </form>
 
-    h1 {
-      font-size: 1.5rem;
-      color: var(--primary-dark);
-      margin-bottom: 0.5rem;
-    }
-
-    p {
-      color: #4b5563;
-      margin-bottom: 1.5rem;
-      line-height: 1.4;
-    }
-
-    .button-grid {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
-
-    button {
-      border: none;
-      border-radius: 8px;
-      color: white;
-      font-size: 1rem;
-      font-weight: 600;
-      padding: 12px;
-      cursor: pointer;
-      transition: background 0.2s ease, transform 0.15s ease;
-    }
-
-    button:hover {
-      transform: translateY(-2px);
-    }
-
-    .issued { background: var(--primary); }
-    .issued:hover { background: var(--primary-dark); }
-
-    .decline { background: var(--decline); }
-    .decline:hover { background: #991b1b; }
-
-    .contact { background: var(--contact); }
-    .contact:hover { background: #92400e; }
-
-    .noneed { background: var(--noneed); }
-    .noneed:hover { background: #7e22ce; }
-
-    footer {
-      margin-top: 2rem;
-      font-size: 0.8rem;
-      color: #9ca3af;
-    }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h1>Update Loan Status</h1>
-    <p>Please select the correct outcome for <strong>${lead.first_name} ${lead.surname}</strong>.</p>
-
-    <div class="button-grid">
-      <form method="POST" action="/confirm-status/${token}?status=Issued">
-        <button type="submit" class="issued">✅ Mark as Issued</button>
-      </form>
-
-      <form method="POST" action="/confirm-status/${token}?status=Agent Declined">
-        <button type="submit" class="decline">❌ Agent Declined</button>
-      </form>
-
-      <form method="POST" action="/confirm-status/${token}?status=Unable to Contact">
-        <button type="submit" class="contact">📞 Unable to Contact</button>
-      </form>
-
-      <form method="POST" action="/confirm-status/${token}?status=No Longer Needed">
-        <button type="submit" class="noneed">💭 No Longer Needed</button>
-      </form>
-    </div>
-
-    <footer>
-      Powered by <strong>Handy Digital</strong>
-    </footer>
-  </div>
-</body>
-</html>
-`);
+        <form method="POST" action="/confirm-status/${token}?status=No Longer Needed">
+          <button type="submit" class="no-need">💭 No Longer Needed</button>
+        </form>
+      </body>
+      </html>
+    `);
   } catch (err) {
     console.error("❌ Error showing confirm page:", err);
     res.status(500).send("Error loading confirmation page");
   }
 });
 
-
 app.post("/confirm-status/:token", async (req, res) => {
   const { token } = req.params;
-  const parts = token.split("-");
-  const leadId = parts.slice(0, 5).join("-");
+  const leadId = token.split("-")[0];
   const status = req.query.status || "Unknown";
 
-  if (!leadId) return res.status(400).send("Invalid token");
+  if (!leadId) {
+    return res.status(400).send("Invalid token");
+  }
 
   try {
-    const { data: lead } = await supabase
+    const { data: lead, error: fetchError } = await supabase
       .from("loan_applications")
       .select("first_name, surname")
       .eq("id", leadId)
       .single();
 
-    await supabase
+    if (fetchError || !lead) throw fetchError;
+
+    // 🧾 Update status and timestamp
+    const { error } = await supabase
       .from("loan_applications")
-      .update({ status, issued_time: new Date().toISOString() })
+      .update({
+        status,
+        issued_time: new Date().toISOString(),
+      })
       .eq("id", leadId);
+
+    if (error) throw error;
 
     res.send(`
       <!DOCTYPE html>
@@ -403,13 +340,13 @@ app.post("/confirm-status/:token", async (req, res) => {
         </style>
       </head>
       <body>
-        <h2>✅ ${lead.first_name} ${lead.surname}'s loan updated to "${status}"</h2>
+        <h2>✅ ${lead.first_name} ${lead.surname}'s loan updated to: "${status}"</h2>
         <p>You can now close this page.</p>
       </body>
       </html>
     `);
   } catch (err) {
-    console.error("❌ Error updating status:", err);
+    console.error("❌ Error updating loan status:", err);
     res.status(500).send("Error updating status");
   }
 });
@@ -425,44 +362,52 @@ app.post("/lead-created", async (req, res) => {
   console.log("📩 Webhook received new lead:", newLead);
 
   if (!newLead?.company_name) {
-    return res.status(400).json({ success: false, error: "Missing company_name" });
+    return res
+      .status(400)
+      .json({ success: false, error: "Missing company_name" });
   }
 
   try {
-    // Fetch managers for this company
-    const { data: managers, error: mgrError } = await supabase
-  .from("users")
-  .select("id, email, phone, role, company_name, lead_notifications")
-  .eq("company_name", newLead.company_name)
-  .eq("role", "manager")
-  .eq("lead_notifications", true); // ✅ only notify opted-in users
+    // ✅ Fetch admins for this company (not managers)
+    const { data: admins, error: adminError } = await supabase
+      .from("users")
+      .select("id, email, phone, role, company_name, lead_notifications")
+      .eq("company_name", newLead.company_name)
+      .eq("role", "admin")
+      .eq("lead_notifications", true); // only notify opted-in users
 
-    if (mgrError) throw mgrError;
+    if (adminError) throw adminError;
 
-    if (!managers?.length) {
-      console.log(`⚠️ No managers found for ${newLead.company_name}`);
-      return res.json({ success: true, message: "No managers to notify" });
+    if (!admins?.length) {
+      console.log(`⚠️ No admins found for ${newLead.company_name}`);
+      return res.json({ success: true, message: "No admins to notify" });
     }
 
-    // Build snapshot message
-    const snapshot = `Lead: ${newLead.first_name || ""} ${newLead.surname || ""}, Amount: £${newLead.amount_requested || ""}`;
-    const message = `Hello, a new lead has been submitted via the ${newLead.company_name} website.\n\n${snapshot}\n\nPlease login to your dashboard to view the full lead details.`;
+    // ✅ Build snapshot message with dashboard link
+const dashboardUrl = `https://handy-digital-leads.co.uk`;
 
-    // Notify all managers
-    for (const manager of managers) {
-      // 📱 SMS via Twilio
-      if (manager.phone) {
+const snapshot = `Lead: ${newLead.first_name || ""} ${
+  newLead.surname || ""
+}, Amount: £${newLead.amount_requested || ""}`;
+
+const message = `📩 A new lead has been submitted via ${newLead.company_name}.
+\n${snapshot}\n\nPlease log in to your dashboard to review full details:\n${dashboardUrl}`;
+
+    // ✅ Notify all admins (SMS + Email)
+    for (const admin of admins) {
+      // SMS via Twilio
+      if (admin.phone) {
         await twilioClient.messages.create({
           body: message,
           from: twilioNumber,
-          to: manager.phone,
+          to: admin.phone,
         });
       }
 
-      // 📧 Email via SendGrid
-      if (manager.email) {
+      // Email via SendGrid
+      if (admin.email) {
         await sgMail.send({
-          to: manager.email,
+          to: admin.email,
           from: "support@browsair.me",
           subject: `New Lead Submitted - ${newLead.company_name}`,
           text: message,
@@ -470,13 +415,13 @@ app.post("/lead-created", async (req, res) => {
       }
     }
 
-    res.json({ success: true, message: "Notifications sent" });
-
+    res.json({ success: true, message: "Admin notifications sent" });
   } catch (err) {
-    console.error("❌ Error sending notifications:", err);
+    console.error("❌ Error sending admin notifications:", err);
     res.status(500).json({ success: false, error: err.message });
   }
 });
+
 
 
 // 📊 Average Time To Issue (TTI) per agent (filtered by company + branch)
@@ -542,27 +487,104 @@ app.get("/avg-tti", async (req, res) => {
 });
 
 
+// --- 📦 Assign Branch + Notify Only Branch Managers ---
 app.post("/assign-branch", async (req, res) => {
   const { leadId, branchId } = req.body;
 
   if (!leadId || !branchId) {
-    return res.status(400).json({ success: false, error: "Missing leadId or branchId" });
+    return res.status(400).json({
+      success: false,
+      error: "Missing leadId or branchId",
+    });
   }
 
   try {
-    const { error } = await supabase
+    console.log(`📩 Assigning branch ${branchId} to lead ${leadId}`);
+
+    // ✅ 1. Update lead’s assigned_branch and fetch lead details
+    const { data: updatedLead, error: updateError } = await supabase
       .from("loan_applications")
       .update({ assigned_branch: branchId })
-      .eq("id", leadId);
+      .eq("id", leadId)
+      .select()
+      .single();
 
-    if (error) throw error;
+    if (updateError) throw updateError;
 
-    res.json({ success: true, message: "Branch assigned successfully" });
+    if (!updatedLead) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Lead not found after update" });
+    }
+
+    // ✅ 2. Fetch managers for this company + branch
+    const { data: managers, error: mgrError } = await supabase
+      .from("users")
+      .select("id, email, phone, role, company_name, branch, lead_notifications")
+      .eq("company_name", updatedLead.company_name)
+      .eq("branch", branchId)
+      .eq("role", "manager")
+      .eq("lead_notifications", true);
+
+    if (mgrError) throw mgrError;
+
+    if (!managers?.length) {
+      console.log(
+        `⚠️ No managers found for branch ${branchId} (${updatedLead.company_name})`
+      );
+      return res.json({
+        success: true,
+        message: "Branch assigned successfully (no managers found for notification)",
+      });
+    }
+
+    // ✅ 3. Prepare message
+    const snapshot = `Lead: ${updatedLead.first_name || ""} ${
+      updatedLead.surname || ""
+    }\nAmount: £${updatedLead.amount_requested || ""}\nReason: ${
+      updatedLead.reason_for_borrowing || ""
+    }`;
+
+    const dashboardUrl = `https://handy-digital-leads.co.uk`;
+    const message = `📩 A new lead has been assigned to your branch under ${updatedLead.company_name}.
+\n${snapshot}\n\nView Lead: ${dashboardUrl}`;
+
+    // ✅ 4. Notify branch managersS
+    for (const manager of managers) {
+      // SMS
+      if (manager.phone) {
+        await twilioClient.messages.create({
+          body: message,
+          from: twilioNumber,
+          to: manager.phone,
+        });
+      }
+
+      // Email
+      if (manager.email) {
+        await sgMail.send({
+          to: manager.email,
+          from: "support@browsair.me",
+          subject: `New Lead Assigned - ${updatedLead.company_name}`,
+          text: message,
+        });
+      }
+    }
+
+    // ✅ 5. Respond success
+    res.json({
+      success: true,
+      message: "Branch assigned and managers notified",
+    });
   } catch (err) {
-    console.error("❌ Error assigning branch:", err.message);
-    res.status(500).json({ success: false, error: err.message });
+    console.error("❌ Error assigning branch or notifying managers:", err);
+    res.status(500).json({
+      success: false,
+      error: err.message,
+    });
   }
 });
+
 
 // (Optional) tiny helper – in case a raw UK number slips through
 const toE164UK = (n) => {
@@ -661,7 +683,3 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
-
-
-
-
