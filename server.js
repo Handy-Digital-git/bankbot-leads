@@ -224,7 +224,7 @@ app.post("/mark-issued", async (req, res) => {
 // --- Mark issued via token ---
 app.get("/mark-issued/:token", async (req, res) => {
   const { token } = req.params;
-  const leadId = token.split("-")[0];
+  const leadId = token.substring(0, token.lastIndexOf("-"));
 
   if (!leadId) {
     return res.status(400).send("Invalid token");
@@ -302,7 +302,7 @@ app.get("/mark-issued/:token", async (req, res) => {
 
 app.post("/confirm-status/:token", async (req, res) => {
   const { token } = req.params;
-  const leadId = token.split("-")[0];
+  const leadId = token.substring(0, token.lastIndexOf("-"));
   const status = req.query.status || "Unknown";
 
   if (!leadId) {
@@ -683,3 +683,4 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
