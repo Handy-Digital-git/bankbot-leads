@@ -39,6 +39,7 @@ const twilioClient = twilio(
 );
 const twilioNumber = process.env.TWILIO_NUMBER;
 
+
 // --- SendGrid ---
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
@@ -78,16 +79,13 @@ app.post("/assign-lead", async (req, res) => {
 `New lead assigned:
 
 ${lead.title || ""} ${lead.first_name || ""} ${lead.surname || ""}
-DOB: ${lead.dob || ""}
 Amount Requested: ${lead.amount_requested || ""} over ${lead.loan_term || ""} weeks
-Income: ${lead.income || ""}
 Address: ${lead.address || ""}
 Town: ${lead.town || ""}
 Postcode: ${lead.postcode || ""}
 Best Time To Call: ${lead.best_call_time || ""}
-Collection Method: ${lead.method_collection || ""}
 
-➡️ Mark as Issued: ${issueLink}`,
+Mark as Issued: ${issueLink}`,
       from: twilioNumber,
       to: agent.phone,
     });
@@ -390,7 +388,7 @@ const snapshot = `Lead: ${newLead.first_name || ""} ${
   newLead.surname || ""
 }, Amount: £${newLead.amount_requested || ""}`;
 
-const message = `📩 A new lead has been submitted via ${newLead.company_name}.
+const message = `A new lead has been submitted via ${newLead.company_name}.
 \n${snapshot}\n\nPlease log in to your dashboard to review full details:\n${dashboardUrl}`;
 
     // ✅ Notify all admins (SMS + Email)
@@ -546,7 +544,7 @@ app.post("/assign-branch", async (req, res) => {
     }`;
 
     const dashboardUrl = `https://handy-digital-leads.co.uk`;
-    const message = `📩 A new lead has been assigned to your branch under ${updatedLead.company_name}.
+    const message = `A new lead has been assigned to your branch.
 \n${snapshot}\n\nView Lead: ${dashboardUrl}`;
 
     // ✅ 4. Notify branch managersS
@@ -683,5 +681,3 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
-
-
