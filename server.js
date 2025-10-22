@@ -423,6 +423,7 @@ const message = `A new lead has been submitted via ${newLead.company_name}.
 
 
 // 📊 Average Time To Issue (TTI) per agent (filtered by company + branch)
+// 📊 Average Time To Issue (TTI) per agent (filtered by company + branch)
 app.get("/avg-tti", async (req, res) => {
   try {
     const { company_name, branch } = req.query; // 👈 now using 'branch'
@@ -453,29 +454,33 @@ app.get("/avg-tti", async (req, res) => {
     console.log("✅ Filtered rows after match:", filtered?.length || 0);
 
     // 🕓 Format intervals
-    const formatted = filtered.map((row) => {
-      const interval = row.avg_tti_interval; // e.g. "1 day 03:22:00"
-      let days = 0,
-        hours = 0,
-        mins = 0;
+    // 🕓 Format intervals
+const formatted = filtered
+  .map((row) => {
+    const interval = row.avg_tti_interval; // e.g. "1 day 03:22:00"
+    if (!interval || /0\s+days?\s+00:00:00/.test(interval)) return null; // 🧹 Skip empty/zero intervals
 
-      if (interval) {
-        const match = interval.match(/(\d+)\s+days?/);
-        if (match) days = parseInt(match[1], 10);
+    let days = 0,
+      hours = 0,
+      mins = 0;
 
-        const timeMatch = interval.match(/(\d+):(\d+):/);
-        if (timeMatch) {
-          hours = parseInt(timeMatch[1], 10);
-          mins = parseInt(timeMatch[2], 10);
-        }
-      }
+    const match = interval.match(/(\d+)\s+days?/);
+    if (match) days = parseInt(match[1], 10);
 
-      return {
-        assigned_agent: row.assigned_agent,
-        company_name: row.company_name,
-        avg_tti: `${days}d ${hours}h ${mins}m`,
-      };
-    });
+    const timeMatch = interval.match(/(\d+):(\d+):/);
+    if (timeMatch) {
+      hours = parseInt(timeMatch[1], 10);
+      mins = parseInt(timeMatch[2], 10);
+    }
+
+    return {
+      assigned_agent: row.assigned_agent,
+      company_name: row.company_name,
+      avg_tti: `${days}d ${hours}h ${mins}m`,
+    };
+  })
+  .filter(Boolean); // 🧹 Remove nulls
+
 
     res.json({ success: true, data: formatted });
   } catch (err) {
@@ -681,3 +686,4 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
