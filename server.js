@@ -95,7 +95,7 @@ Collection Method: ${lead.method_collection || ""}
     // 📧 Email via SendGrid (optional — includes issue link too)
     await sgMail.send({
       to: agent.email,
-      from: "support@browsair.me",
+      from: "info@handy-digital.com",
       subject: `New Lead Assigned - ${lead.first_name || ""} ${lead.surname || ""}`,
       text: 
 `New lead assigned:
@@ -167,7 +167,7 @@ app.post("/send-template", async (req, res) => {
       if (t.channel === "email" && lead.email) {
         await sgMail.send({
           to: lead.email, // ✅ customer’s email
-          from: "support@browsair.me",
+          from: "info@handy-digital.com",
           subject: t.subject || `Notification from ${company_name}`,
           text: t.body,
         });
@@ -408,7 +408,7 @@ const message = `📩 A new lead has been submitted via ${newLead.company_name}.
       if (admin.email) {
         await sgMail.send({
           to: admin.email,
-          from: "support@browsair.me",
+          from: "info@handy-digital.com",
           subject: `New Lead Submitted - ${newLead.company_name}`,
           text: message,
         });
@@ -564,7 +564,7 @@ app.post("/assign-branch", async (req, res) => {
       if (manager.email) {
         await sgMail.send({
           to: manager.email,
-          from: "support@browsair.me",
+          from: "info@handy-digital.com",
           subject: `New Lead Assigned - ${updatedLead.company_name}`,
           text: message,
         });
@@ -683,4 +683,5 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
