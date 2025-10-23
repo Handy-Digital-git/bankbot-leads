@@ -588,6 +588,61 @@ app.post("/assign-branch", async (req, res) => {
   }
 });
 
+// --- Send Open Banking link ---
+app.post("/send-open-banking", async (req, res) => {
+  const { customer_name, phone_number, company_name } = req.body;
+
+  if (!customer_name || !phone_number || !company_name) {
+    return res.status(400).json({ success: false, error: "Missing fields" });
+  }
+
+  try {
+    // Fetch Open Banking SMS template for this company
+    const { data: template, error: templateError } = await supabase
+      .from("message_templates")
+      .select("body")
+      .eq("company_name", company_name)
+      .eq("type", "Open Banking")
+      .eq("channel", "sms")
+      .single();
+
+    if (templateError || !template?.body) {
+      throw new Error("No Open Banking template found for this company");
+    }
+
+    // Format phone
+    const digits = phone_number.replace(/\D/g, "");
+    const to = digits.startsWith("44")
+      ? `+${digits}`
+      : digits.startsWith("0")
+      ? `+44${digits.slice(1)}`
+      : `+44${digits}`;
+
+    // Send SMS via Twilio
+    await twilioClient.messages.create({
+      body: template.body,
+      from: twilioNumber,
+      to,
+    });
+
+    // Store log in Supabase
+    await supabase.from("open_banking").insert([
+      {
+        company_name,
+        customer_name,
+        phone_number: to,
+        sent_at: new Date().toISOString(),
+        status: "Sent",
+      },
+    ]);
+
+    res.json({ success: true, message: "Open Banking link sent successfully" });
+  } catch (err) {
+    console.error("❌ Error sending Open Banking link:", err);
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 
 // (Optional) tiny helper – in case a raw UK number slips through
 const toE164UK = (n) => {
@@ -686,4 +741,5 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
