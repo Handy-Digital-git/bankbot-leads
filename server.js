@@ -108,6 +108,7 @@ Town: ${lead.town || ""}
 Postcode: ${lead.postcode || ""}
 Best Time To Call: ${lead.best_call_time || ""}
 Collection Method: ${lead.method_collection || ""}
+Phone Number: ${lead.phone_number || ""}
 
 ➡️ Mark as Issued: ${issueLink}`,
     });
@@ -742,6 +743,7 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
 
 
