@@ -16,6 +16,8 @@ Use ISO YYYY-MM-DD dates only where readable, otherwise null. Money is integer p
 Identify the main transaction account separately from savings pots and unknown accounts. Never add savings pots to main-account balances. Currency must be read from the statement, otherwise null.
 Money out and money in come only from their respective columns or unambiguous debit/credit labels, not from the balance column. Record overdrafts as negative balance_pence, including OD-marked balances. A transaction amount is not an account balance.
 Categories describe observed transactions only. Gambling merchant payments are gambling; refunds/winnings are money in, not spending. Returned direct debits or reversals are returned_payment; explicit arrestments are arrestment. BNPL and other credit repayments must be actual payments, not credit scores, advertisements or unrelated merchant names. Use uncertain when ambiguous and classification_certain false when the category cannot be established. Income is observed money in; do not invent recurring income or income sources. provider is only a name evidenced in the transaction.
+For factual categorisation, check gambling merchant names such as Bet365, Ladbrokes, William Hill, Coral, SkyBet, PokerStars, Paddy Power, 888 Casino, Betfair, Betway, Unibet, Bwin, SportsBetting.ag, Betfred, Grosvenor Casinos, PartyPoker, Spreadex, BetVictor, Betsson, BoyleSports, VBet, LeoVegas, Casino.com, NetBet and FortuneJack, and unambiguous gambling references such as casino, poker, slot, roulette, blackjack, sportsbet, gamble, bingo, wager, betslip, jackpot, odds and betting. Generic words alone do not establish gambling; distinguish unrelated merchants.
+BNPL examples: Klarna, Clearpay, Laybuy, Zilch, Payl8r, DivideBuy, Snap Finance, PayPal Pay in 3, Flexifi, Humm, Openpay, Affirm, Sezzle, Zip and Afterpay. Other credit examples: Capital One, Vanquis, Aqua, Barclaycard, MBNA, Tesco Bank, Sainsbury's Bank, Likely Loans, Everyday Loans, Avant, Fund Ourselves, 118 118 Money, Drafty, Lending Stream, Bamboo Loans, Amigo Loans, TrustTwo, Oakam, Dot Dot Loans, SafetyNet, Zopa, Tappily, CashFloat, Sunny, MyJar, WageDay Advance, PayDay UK, Provident, Credit Spring, TotallyMoney, ClearScore, CashPlus and Loqbox. Only categorise actual outgoing credit payments: a score-checking service or a generic word such as credit, loan, finance, repayment, instalment or monthly payment is not sufficient evidence by itself. Do not return these reference lists; include only evidenced transaction/provider names.
 Report unreadable pages, missing dates/columns, ambiguous signs, unknown currencies/accounts and incomplete transaction history in issues. A balance-only document or unreadable file must not be treated as evidence of no concerning transactions. Do not output bank account numbers or customer contact information. Return only the specified JSON.`;
 
 const fail = (status, message) => Object.assign(new Error(message), { status });
@@ -98,6 +100,7 @@ export function createStatementReport(input) {
   const findings = category => rows.filter(row => row.category === category && row.classification_certain);
   const spend = category => findings(category).filter(row => row.money_out_pence > 0);
   const gambling = spend('gambling'), bnpl = spend('bnpl'), credit = spend('credit_repayment');
+  const gamblingCredits=findings('gambling').filter(row=>row.money_in_pence>0);
   const negative = balances.filter(row => row.balance_pence < 0);
   const weekdays = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
   const income = findings('income').filter(row => row.money_in_pence > 0 && row.date);
@@ -117,7 +120,7 @@ export function createStatementReport(input) {
     '**Review status:** Awaiting staff review. This report records extracted facts and does not approve or decline a loan.',
     `**Statement coverage:** ${data.period_start || 'Start unreadable'} to ${data.period_end || 'End unreadable'}. ${rows.length} main-account transactions extracted.`,
     `**Overdrawn Balances:** ${negative.length ? negative.map(row => `${row.date || 'Date unreadable'}: ${money(row.balance_pence)} (${clean(row.source_reference)})`).join('; ') : 'No negative main-account balances extracted.'} ${balances.length ? `Lowest observed balance: ${money(Math.min(...balances.map(row => row.balance_pence)))}.` : 'Balance column unavailable.'}`,
-    `**Gambling Transactions:** ${list(gambling)}${gambling.length ? ` Total identified money out: ${money(sumOut(gambling))}.` : ''}`,
+    `**Gambling Transactions:** ${list(gambling)}${gambling.length ? ` Total identified money out: ${money(sumOut(gambling))}.` : ''}${gamblingCredits.length ? ` Incoming credits excluded from that spending total: ${list(gamblingCredits)}.` : ''}`,
     `**Returned Payments / Arrestments:** ${list([...findings('returned_payment'),...findings('arrestment')])}`,
     `**Buy Now Pay Later (BNPL) Usage:** ${list(bnpl)}${bnpl.length ? ` Total identified money out: ${money(sumOut(bnpl))}.` : ''}`,
     `**Other Credit or Loan Repayment:** ${list(credit)}${credit.length ? ` Total identified money out: ${money(sumOut(credit))}.` : ''}`,
