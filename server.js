@@ -1,3 +1,4 @@
+import { registerApplicationPlatform } from "./application-platform/leads-receiver.js";
 import express from "express";
 import twilio from "twilio";
 import sgMail from "@sendgrid/mail";
@@ -6,6 +7,8 @@ import dotenv from "dotenv";
 import cors from "cors";
 import crypto from "crypto";
 import axios from "axios";
+
+const loanTermDescription = lead => lead.application_details?.quote?.plan === "pay-in-3" ? "3 months" : `${lead.loan_term || ""} weeks`;
 
 // 🔑 Generate a unique token for marking issued
 function generateIssueToken(leadId) {
@@ -21,16 +24,18 @@ const app = express();
 app.use(cors({
   origin: "*", // or "*" for testing all origins
   methods: ["GET", "POST"],
-  allowedHeaders: ["Content-Type"]
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
-app.use(express.json());
+app.use(express.json({ limit: "200kb" }));
 
 // --- Supabase ---
 const supabase = createClient(
   process.env.VITE_SUPABASE_URL,
   process.env.VITE_SUPABASE_SERVICE_ROLE_KEY // ⚠️ service role key for server only
 );
+
+registerApplicationPlatform(app, { supabase });
 
 // --- Twilio ---
 const twilioClient = twilio(
@@ -359,7 +364,7 @@ app.post("/confirm-status/:token", async (req, res) => {
 app.post("/lead-created", async (req, res) => {
   const newLead = req.body.record; // Supabase sends { type, table, record, schema }
 
-  console.log("📩 Webhook received new lead:", newLead);
+  console.log("Lead notification received");
 
   if (!newLead?.company_name) {
     return res
