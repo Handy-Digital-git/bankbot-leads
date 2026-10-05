@@ -35,7 +35,7 @@ const supabase = createClient(
   process.env.VITE_SUPABASE_SERVICE_ROLE_KEY // ⚠️ service role key for server only
 );
 
-registerApplicationPlatform(app, { supabase });
+registerApplicationPlatform(app, { supabase, createUserClient: token => { const key = process.env.VITE_SUPABASE_ANON_KEY || (process.env.VITE_SUPABASE_SERVICE_ROLE_KEY?.startsWith("eyJ") ? process.env.VITE_SUPABASE_SERVICE_ROLE_KEY : null); if (!key) throw new Error("Configure the public Supabase client key for staff access checks."); return createClient(process.env.VITE_SUPABASE_URL, key, { global: { headers: { Authorization: "Bearer " + token } }, auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } }); } });
 
 // --- Twilio ---
 const twilioClient = twilio(

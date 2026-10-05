@@ -13,7 +13,7 @@ export function authenticateIntegration(headers,integrations){
  return {...config,id};
 }
 const checked=result=>{if(result.error)throw fail(503,'Private application storage is unavailable.');return result.data;};
-export function createLeadsReceiver({supabase,integrations={},dashboardReady=false,extract=createStatementExtractor(),now=()=>Date.now()}={}){
+export function createLeadsReceiver({supabase,integrations={},dashboardReady=false,extract=createStatementExtractor(),now=()=>Date.now(),getReadableLead}={}){
  let working=false;
  async function reviewNext(){
   if(working || !dashboardReady)return;working=true;
@@ -84,9 +84,15 @@ export function createLeadsReceiver({supabase,integrations={},dashboardReady=fal
   async download(token,id){
    if(!token || String(token).length>8192 || !/^[A-Za-z0-9-]{1,100}$/.test(id||''))throw fail(401,'Sign in to view this document.');
    const auth=await supabase.auth.getUser(token),user=auth.data?.user;if(auth.error||!user?.email||!user.email_confirmed_at)throw fail(401,'Sign in to view this document.');
-   const staff=checked(await supabase.from('users').select('name,role,company_name').eq('email',user.email).maybeSingle());
-   const lead=checked(await supabase.from('loan_applications').select('company_name,assigned_agent,statement_path,web_company_id').eq('id',id).maybeSingle());
-   if(!lead||!staff||staff.company_name!==lead.company_name||!(['admin','manager'].includes(staff.role)||staff.role==='agent'&&lead.assigned_agent===staff.name)||!lead.statement_path?.startsWith(lead.web_company_id+'/'))throw fail(403,'You do not have access to this statement.');
+   const staff=checked(await supabase.from('users').select('role,company_name,branch').eq('email',user.email).maybeSingle());
+   // Check as the caller, not as the privileged worker, so existing RLS remains in force.
+   const lead=getReadableLead?await getReadableLead(token,id):null;
+   if(!lead||!staff||staff.company_name!==lead.company_name||(staff.branch&&staff.branch!==lead.assigned_branch)||!lead.statement_path?.startsWith(lead.web_company_id+'/'))throw fail(403,'You do not have access to this statement.');
+   if(integrations[lead.web_company_id]?.companyName!==lead.company_name)throw fail(403,'This document does not belong to this company.');
+   if(staff.role==='agent'){
+    const agent=checked(await supabase.from('agents').select('name,company_name,active').eq('email',user.email).maybeSingle());
+    if(!agent?.active||agent.company_name!==staff.company_name||agent.name!==lead.assigned_agent)throw fail(403,'You do not have access to this statement.');
+   }else if(!['admin','manager'].includes(staff.role))throw fail(403,'You do not have access to this statement.');
    const signed=checked(await supabase.storage.from(bucket).createSignedUrl(lead.statement_path,60));return {url:signed.signedUrl};
   },
   reviewNext,
@@ -100,9 +106,13 @@ export function createLeadsReceiver({supabase,integrations={},dashboardReady=fal
   },
  };
 }
-export function registerApplicationPlatform(app,{supabase,env=process.env}={}){
+export function registerApplicationPlatform(app,{supabase,env=process.env,createUserClient}={}){
  let integrations;try{integrations=JSON.parse(env.APPLICATION_PLATFORM_INTEGRATIONS_JSON||'{}');}catch{throw Error('Invalid application platform connection configuration.');}
- const receiver=createLeadsReceiver({supabase,integrations,dashboardReady:env.APPLICATION_PLATFORM_DASHBOARD_READY==='true'});
+ const getReadableLead=async(token,id)=>{
+  if(!createUserClient)return null;
+  try{const result=await createUserClient(token).from('loan_applications').select('company_name,assigned_agent,assigned_branch,statement_path,web_company_id').eq('id',id).maybeSingle();return result.error?null:result.data;}catch{return null;}
+ };
+ const receiver=createLeadsReceiver({supabase,integrations,dashboardReady:env.APPLICATION_PLATFORM_DASHBOARD_READY==='true',getReadableLead});
  for(const action of ['uploads','applications','verify','status'])app.post('/api/application-platform/'+action,async(req,res)=>{
   res.set('Cache-Control','no-store');try{const config=authenticateIntegration(req.headers,integrations);const result=await receiver[action](config,req.body||{});res.status(result.duplicate?200:201).json(result);}catch(error){res.status(error.status||503).json({error:error.status?error.message:'Application service is unavailable.'});}
  });

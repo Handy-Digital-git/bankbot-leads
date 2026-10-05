@@ -4,7 +4,7 @@ import {randomUUID} from 'node:crypto';
 import {authenticateIntegration,createLeadsReceiver} from '../application-platform/leads-receiver.js';
 const config={id:'handycash',companyName:'Handycash Home Credit Ltd',token:'a'.repeat(64),openaiApiKey:'private-test-key'};
 function memory(){
- const db={application_statement_uploads:[],loan_applications:[],users:[]},files=new Map(),signs=[];let user={email:'staff@example.com',email_confirmed_at:'2026-01-01'};
+ const db={application_statement_uploads:[],loan_applications:[],users:[],agents:[]},files=new Map(),signs=[];let user={email:'staff@example.com',email_confirmed_at:'2026-01-01'};
  return {db,files,signs,setUser:value=>user=value,client:{
   auth:{getUser:async()=>({data:{user},error:null})},
   storage:{from:()=>({createSignedUploadUrl:async path=>({data:{signedUrl:'https://project.supabase.co/storage/v1/object/upload/sign/application-statements/'+path}}),download:async path=>files.has(path)?{data:new Blob([files.get(path)])}:{error:{}},createSignedUrl:async(path,expiry)=>{signs.push({path,expiry});return {data:{signedUrl:'https://project.supabase.co/private?token=short-lived'}};},remove:async paths=>{paths.forEach(path=>files.delete(path));return {data:[]};}})},
@@ -43,9 +43,16 @@ test('expired uploads, oversized or disguised documents cannot create leads',asy
  ticket.expires_at='2000-01-01';await assert.rejects(()=>receiver.applications(config,request),e=>e.status===422);assert.equal(store.db.loan_applications.length,0);
 });
 test('private statements require a verified staff session and company/assignment authorization',async()=>{
- const store=memory(),receiver=createLeadsReceiver({supabase:store.client,dashboardReady:true});await receiver.applications(config,await uploaded(receiver,store));const lead=store.db.loan_applications[0];store.db.users.push({email:'staff@example.com',name:'Agent Example',role:'agent',company_name:config.companyName});
+ const store=memory(),receiver=createLeadsReceiver({supabase:store.client,integrations:{handycash:config},dashboardReady:true,getReadableLead:async(token,id)=>store.db.loan_applications.find(row=>row.id===id)});await receiver.applications(config,await uploaded(receiver,store));const lead=store.db.loan_applications[0];store.db.users.push({email:'staff@example.com',role:'agent',company_name:config.companyName});store.db.agents.push({email:'staff@example.com',name:'Agent Example',company_name:config.companyName,active:true});
  await assert.rejects(()=>receiver.download('jwt',lead.id),e=>e.status===403);lead.assigned_agent='Agent Example';assert.ok((await receiver.download('jwt',lead.id)).url);assert.equal(store.signs[0].expiry,60);
  store.db.users[0].company_name='Different company';await assert.rejects(()=>receiver.download('jwt',lead.id),e=>e.status===403);store.setUser(null);await assert.rejects(()=>receiver.download('jwt',lead.id),e=>e.status===401);
+});
+test('private downloads preserve the existing branch scope and fail closed when row permissions deny access',async()=>{
+ const store=memory(),receiver=createLeadsReceiver({supabase:store.client,integrations:{handycash:config},dashboardReady:true,getReadableLead:async(token,id)=>store.db.loan_applications.find(row=>row.id===id)});await receiver.applications(config,await uploaded(receiver,store));const lead=store.db.loan_applications[0];lead.assigned_branch='branch-one';store.db.users.push({email:'staff@example.com',role:'manager',company_name:config.companyName,branch:'branch-two'});
+ await assert.rejects(()=>receiver.download('jwt',lead.id),e=>e.status===403);assert.equal(store.signs.length,0);
+ store.db.users[0].branch='branch-one';assert.ok((await receiver.download('jwt',lead.id)).url);
+ const denied=createLeadsReceiver({supabase:store.client,getReadableLead:async()=>null});await assert.rejects(()=>denied.download('jwt',lead.id),e=>e.status===403);assert.equal(store.signs.length,1);
+ lead.web_company_id='other-company';lead.statement_path='other-company/statement.pdf';await assert.rejects(()=>receiver.download('jwt',lead.id),e=>e.status===403);assert.equal(store.signs.length,1);
 });
 test('review worker receives only the statement and produces staff-report facts; unreadable files stay with staff',async()=>{
  const store=memory();let calls=0;
