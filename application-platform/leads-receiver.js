@@ -43,12 +43,11 @@ export function createLeadsReceiver({supabase,integrations={},dashboardReady=fal
  }
  return {
   async status(config){
-   try{
-    checked(await supabase.from('loan_applications').select('id,review_mode,statement_path').limit(0));
-    checked(await supabase.from('application_statement_uploads').select('id').limit(0));
-    const storage=checked(await supabase.storage.getBucket(bucket));
-    return {ready:dashboardReady && storage.public===false && /^sk-/.test(config.openaiApiKey)};
-   }catch{return {ready:false};}
+   const checks={leadFields:false,uploadTable:false,privateBucket:false,dashboardReady,openAIKeyConfigured:/^sk-/.test(config.openaiApiKey)};
+   try{checked(await supabase.from('loan_applications').select('id,review_mode,statement_path').limit(0));checks.leadFields=true;}catch{}
+   try{checked(await supabase.from('application_statement_uploads').select('id').limit(0));checks.uploadTable=true;}catch{}
+   try{checks.privateBucket=checked(await supabase.storage.getBucket(bucket)).public===false;}catch{}
+   return {ready:Object.values(checks).every(value=>value===true),checks};
   },
   async uploads(config,input){
    if(!dashboardReady)throw fail(503,'The staff review dashboard is not ready.');
