@@ -15,6 +15,11 @@ export function authenticateIntegration(headers,integrations){
 const checked=result=>{if(result.error)throw fail(503,'Private application storage is unavailable.');return result.data;};
 export function createLeadsReceiver({supabase,integrations={},dashboardReady=false,extract=createStatementExtractor(),now=()=>Date.now(),getReadableLead}={}){
  let working=false;
+ async function documentFor(lead){
+  const ticket=checked(await supabase.from('application_statement_uploads').select('company_id,path,mime,submission_id,route,used_by').eq('path',lead.statement_path).eq('used_by',String(lead.id)).maybeSingle());
+  if(!ticket||ticket.company_id!==lead.web_company_id||ticket.submission_id!==lead.web_submission_id||ticket.route!==lead.application_route||!ticket.path.startsWith(ticket.company_id+'/'))throw fail(403,'This document is not attached to this application.');
+  return ticket;
+ }
  async function reviewNext(){
   if(working || !dashboardReady)return;working=true;
   try{
@@ -25,10 +30,11 @@ export function createLeadsReceiver({supabase,integrations={},dashboardReady=fal
    let report='**Review status:** Awaiting staff review. Staff need to check the original statement; automatic extraction could not be completed.',state='needs-check';
    try{
     if(!config?.openaiApiKey || config.companyName!==lead.company_name)throw Error('Configuration');
-    const file=checked(await supabase.storage.from(bucket).download(lead.statement_path));
+    const document=await documentFor(lead);
+    const file=checked(await supabase.storage.from(bucket).download(document.path));
     if(file.size>10*1024*1024)throw Error('Size');
     const bytes=Buffer.from(await file.arrayBuffer());
-    const facts=await extract({bytes,mime:lead.statement_mime,consent:lead.statement_processing_consent===true,apiKey:config.openaiApiKey});
+    const facts=await extract({bytes,mime:document.mime,consent:lead.statement_processing_consent===true,apiKey:config.openaiApiKey});
     report=createStatementReport(facts).report;state='complete';
    }catch{/* Keep original for staff; never turn an extraction failure into a lending decision. */}
    checked(await supabase.from('loan_applications').update({ai_decision:report,statement_review_state:state,statement_review_lease_until:null}).eq('id',lead.id).eq('statement_review_lease_id',lead.statement_review_lease_id));
@@ -62,7 +68,7 @@ export function createLeadsReceiver({supabase,integrations={},dashboardReady=fal
    const ticket=checked(await supabase.from('application_statement_uploads').select('*').eq('id',input.statement.uploadId).maybeSingle());
    if(!ticket || ticket.company_id!==config.id || ticket.submission_id!==input.submissionId || ticket.route!==input.route || !equal(ticket.secret_hash,hash(input.statement.secret)))throw fail(422,'Invalid statement ownership.');
    const previous=checked(await supabase.from('loan_applications').select('id,web_submission_digest').eq('company_name',config.companyName).eq('web_submission_id',input.submissionId).maybeSingle());
-   if(previous){if(previous.web_submission_digest!==digest)throw fail(409,'Application reference already used for different details.');return {reference:'AG-'+input.submissionId.replaceAll('-','').slice(0,16).toUpperCase(),agentVisit:input.route==='visit',status:'received',duplicate:true};}
+   if(previous){if(previous.web_submission_digest!==digest || ticket.used_by&&ticket.used_by!==String(previous.id))throw fail(409,'Application reference already used for different details.');if(!ticket.used_by)checked(await supabase.from('application_statement_uploads').update({used_by:String(previous.id)}).eq('id',ticket.id));return {reference:'AG-'+input.submissionId.replaceAll('-','').slice(0,16).toUpperCase(),agentVisit:input.route==='visit',status:'received',duplicate:true};}
    if(ticket.used_by || new Date(ticket.expires_at).getTime()<=now())throw fail(422,'The statement upload expired. Please upload it again.');
    const file=checked(await supabase.storage.from(bucket).download(ticket.path));
    if(file.size>10*1024*1024)throw fail(413,'Choose a statement up to 10 MB.');
@@ -86,14 +92,16 @@ export function createLeadsReceiver({supabase,integrations={},dashboardReady=fal
    const auth=await supabase.auth.getUser(token),user=auth.data?.user;if(auth.error||!user?.email||!user.email_confirmed_at)throw fail(401,'Sign in to view this document.');
    const staff=checked(await supabase.from('users').select('role,company_name,branch').eq('email',user.email).maybeSingle());
    // Check as the caller, not as the privileged worker, so existing RLS remains in force.
-   const lead=getReadableLead?await getReadableLead(token,id):null;
+   const readable=getReadableLead?await getReadableLead(token,id):null;
+   const lead=readable?{...readable,id}:null;
    if(!lead||!staff||staff.company_name!==lead.company_name||(staff.branch&&staff.branch!==lead.assigned_branch)||!lead.statement_path?.startsWith(lead.web_company_id+'/'))throw fail(403,'You do not have access to this statement.');
    if(integrations[lead.web_company_id]?.companyName!==lead.company_name)throw fail(403,'This document does not belong to this company.');
    if(staff.role==='agent'){
     const agent=checked(await supabase.from('agents').select('name,company_name,active').eq('email',user.email).maybeSingle());
     if(!agent?.active||agent.company_name!==staff.company_name||agent.name!==lead.assigned_agent)throw fail(403,'You do not have access to this statement.');
    }else if(!['admin','manager'].includes(staff.role))throw fail(403,'You do not have access to this statement.');
-   const signed=checked(await supabase.storage.from(bucket).createSignedUrl(lead.statement_path,60));return {url:signed.signedUrl};
+   const document=await documentFor(lead);
+   const signed=checked(await supabase.storage.from(bucket).createSignedUrl(document.path,60));return {url:signed.signedUrl};
   },
   reviewNext,
   async cleanOrphans(){
@@ -110,7 +118,7 @@ export function registerApplicationPlatform(app,{supabase,env=process.env,create
  let integrations;try{integrations=JSON.parse(env.APPLICATION_PLATFORM_INTEGRATIONS_JSON||'{}');}catch{throw Error('Invalid application platform connection configuration.');}
  const getReadableLead=async(token,id)=>{
   if(!createUserClient)return null;
-  try{const result=await createUserClient(token).from('loan_applications').select('company_name,assigned_agent,assigned_branch,statement_path,web_company_id').eq('id',id).maybeSingle();return result.error?null:result.data;}catch{return null;}
+  try{const result=await createUserClient(token).from('loan_applications').select('company_name,assigned_agent,assigned_branch,statement_path,web_company_id,web_submission_id,application_route').eq('id',id).maybeSingle();return result.error?null:result.data;}catch{return null;}
  };
  const receiver=createLeadsReceiver({supabase,integrations,dashboardReady:env.APPLICATION_PLATFORM_DASHBOARD_READY==='true',getReadableLead});
  for(const action of ['uploads','applications','verify','status'])app.post('/api/application-platform/'+action,async(req,res)=>{

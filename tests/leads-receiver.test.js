@@ -45,6 +45,7 @@ test('expired uploads, oversized or disguised documents cannot create leads',asy
 test('private statements require a verified staff session and company/assignment authorization',async()=>{
  const store=memory(),receiver=createLeadsReceiver({supabase:store.client,integrations:{handycash:config},dashboardReady:true,getReadableLead:async(token,id)=>store.db.loan_applications.find(row=>row.id===id)});await receiver.applications(config,await uploaded(receiver,store));const lead=store.db.loan_applications[0];store.db.users.push({email:'staff@example.com',role:'agent',company_name:config.companyName});store.db.agents.push({email:'staff@example.com',name:'Agent Example',company_name:config.companyName,active:true});
  await assert.rejects(()=>receiver.download('jwt',lead.id),e=>e.status===403);lead.assigned_agent='Agent Example';assert.ok((await receiver.download('jwt',lead.id)).url);assert.equal(store.signs[0].expiry,60);
+ const originalPath=lead.statement_path;lead.statement_path='handycash/another-lead/statement.pdf';await assert.rejects(()=>receiver.download('jwt',lead.id),e=>e.status===403);assert.equal(store.signs.length,1);lead.statement_path=originalPath;
  store.db.users[0].company_name='Different company';await assert.rejects(()=>receiver.download('jwt',lead.id),e=>e.status===403);store.setUser(null);await assert.rejects(()=>receiver.download('jwt',lead.id),e=>e.status===401);
 });
 test('private downloads preserve the existing branch scope and fail closed when row permissions deny access',async()=>{

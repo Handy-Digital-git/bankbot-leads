@@ -33,6 +33,7 @@ create or replace function public.claim_application_statement_review()
  update public.loan_applications set statement_review_state='processing',statement_review_lease_until=now()+interval '5 minutes',statement_review_lease_id=gen_random_uuid()
  where id=(select id from public.loan_applications where review_mode='staff-review-v1' and
  (statement_review_state='pending' or (statement_review_state='processing' and statement_review_lease_until<now()))
+ and exists(select 1 from public.application_statement_uploads u where u.used_by=loan_applications.id::text and u.path=loan_applications.statement_path and u.company_id=loan_applications.web_company_id and u.submission_id=loan_applications.web_submission_id and u.route=loan_applications.application_route)
  order by created_at limit 1 for update skip locked)
  returning *;
 $$;
