@@ -1,3 +1,4 @@
+import {assignmentContactLines,buildAssignmentSms} from './application-platform/assignment-message.js';
 import { registerApplicationPlatform } from "./application-platform/leads-receiver.js";
 import express from "express";
 import twilio from "twilio";
@@ -58,13 +59,19 @@ app.get("/", (req, res) => {
 // --- Assign lead route ---
 // --- Assign lead route ---
 app.post("/assign-lead", async (req, res) => {
-  const { lead, agentId } = req.body;
+  const { lead: requestedLead, agentId } = req.body;
+  let lead = requestedLead;
 
   if (!lead || !agentId) {
     return res.status(400).json({ success: false, error: "Missing lead or agentId" });
   }
 
   try {
+    // Read current email and upload metadata from the saved application.
+    const {data: savedLead, error: leadError} = await supabase.from('loan_applications').select('*').eq('id', lead.id).single();
+    if (leadError || !savedLead) throw new Error('Lead not found');
+    lead = savedLead;
+
     // 🔍 Fetch agent details from Supabase by ID
     const { data: agent, error } = await supabase
       .from("agents")
@@ -80,18 +87,7 @@ app.post("/assign-lead", async (req, res) => {
 
     // 📩 SMS via Twilio
     await twilioClient.messages.create({
-      body: 
-`New lead assigned:
-
-${lead.title || ""} ${lead.first_name || ""} ${lead.surname || ""}
-Amount Requested: ${lead.amount_requested || ""} over ${lead.loan_term || ""} weeks
-Address: ${lead.address || ""}
-Town: ${lead.town || ""}
-Postcode: ${lead.postcode || ""}
-Best Time To Call: ${lead.best_call_time || ""}
-Phone Number: ${lead.phone_number || ""}
-
-Mark as Issued: ${issueLink}`,
+      body: buildAssignmentSms(lead, issueLink),
       from: twilioNumber,
       to: agent.phone,
     });
@@ -114,6 +110,7 @@ Postcode: ${lead.postcode || ""}
 Best Time To Call: ${lead.best_call_time || ""}
 Collection Method: ${lead.method_collection || ""}
 Phone Number: ${lead.phone_number || ""}
+${assignmentContactLines(lead)}
 
 ➡️ Mark as Issued: ${issueLink}`,
     });

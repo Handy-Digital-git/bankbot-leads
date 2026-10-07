@@ -47,7 +47,7 @@ export function createLeadsReceiver({supabase,integrations={},dashboardReady=fal
    try{checked(await supabase.from('loan_applications').select('id,review_mode,statement_path').limit(0));checks.leadFields=true;}catch{}
    try{checked(await supabase.from('application_statement_uploads').select('id').limit(0));checks.uploadTable=true;}catch{}
    try{checks.privateBucket=checked(await supabase.storage.getBucket(bucket)).public===false;}catch{}
-   return {ready:Object.values(checks).every(value=>value===true),checks,capabilities:{agentStatementDeferral:true}};
+   return {ready:Object.values(checks).every(value=>value===true),checks,capabilities:{agentStatementDeferral:true,assignmentContactDetails:true}};
   },
   async uploads(config,input){
    if(!dashboardReady)throw fail(503,'The staff review dashboard is not ready.');
