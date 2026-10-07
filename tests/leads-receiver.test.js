@@ -73,3 +73,17 @@ test('deferred agent statements create staff follow-up leads without files or AI
  await assert.rejects(()=>receiver.applications(config,{...request,route:'remote',lendingReference:'HCF123'}),e=>e.status===422);
  await assert.rejects(()=>receiver.applications(config,{...request,statementDeferred:false}),e=>e.status===422);
 });
+
+test('vault export verifies ownership and signs only remote statements without changing the lead process',async()=>{
+ const store=memory(),receiver=createLeadsReceiver({supabase:store.client,dashboardReady:true});
+ const request=await uploaded(receiver,store,'remote');
+ const normal=await receiver.verify(config,request);assert.deepEqual(normal,{valid:true});assert.equal(store.signs.length,0);
+ const copy=await receiver.verify(config,{...request,vaultCopy:true});
+ assert.equal(copy.valid,true);assert.equal(copy.vaultDocument.mime,'application/pdf');assert.match(copy.vaultDocument.sha256,/^[a-f0-9]{64}$/);assert.equal(copy.vaultDocument.size,19);
+ assert.equal(store.signs.at(-1).expiry,300);assert.equal(store.db.loan_applications.length,0);
+ await assert.rejects(()=>receiver.verify(config,{...request,vaultCopy:true,statement:{...request.statement,secret:'b'.repeat(64)}}),e=>e.status===422);
+ await receiver.applications(config,request);
+ const retry=await receiver.verify(config,{...request,vaultCopy:true});assert.equal(retry.vaultDocument.sha256,copy.vaultDocument.sha256);
+ assert.equal(store.db.loan_applications.length,1);
+ const agent=await uploaded(receiver,store,'visit');store.files.set(store.db.application_statement_uploads.at(-1).path,Buffer.from('%PDF-synthetic-test'));await assert.rejects(()=>receiver.verify(config,{...agent,vaultCopy:true}),e=>e.status===422);
+});

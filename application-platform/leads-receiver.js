@@ -47,7 +47,7 @@ export function createLeadsReceiver({supabase,integrations={},dashboardReady=fal
    try{checked(await supabase.from('loan_applications').select('id,review_mode,statement_path').limit(0));checks.leadFields=true;}catch{}
    try{checked(await supabase.from('application_statement_uploads').select('id').limit(0));checks.uploadTable=true;}catch{}
    try{checks.privateBucket=checked(await supabase.storage.getBucket(bucket)).public===false;}catch{}
-   return {ready:Object.values(checks).every(value=>value===true),checks,capabilities:{agentStatementDeferral:true,assignmentContactDetails:true}};
+   return {statementVaultCopy:true,ready:Object.values(checks).every(value=>value===true),checks,capabilities:{agentStatementDeferral:true,assignmentContactDetails:true}};
   },
   async uploads(config,input){
    if(!dashboardReady)throw fail(503,'The staff review dashboard is not ready.');
@@ -95,7 +95,13 @@ export function createLeadsReceiver({supabase,integrations={},dashboardReady=fal
    if(!uuid(input.submissionId)||!uuid(input.statement?.uploadId)|| !['remote','visit'].includes(input.route)|| !/^[0-9a-f]{64}$/.test(input.statement?.secret||''))throw fail(422,'Invalid statement upload.');
    const ticket=checked(await supabase.from('application_statement_uploads').select('*').eq('id',input.statement.uploadId).maybeSingle());
    if(!ticket||ticket.company_id!==config.id||ticket.submission_id!==input.submissionId||ticket.route!==input.route||!equal(ticket.secret_hash,hash(input.statement.secret))||(!ticket.used_by&&new Date(ticket.expires_at).getTime()<=now()))throw fail(422,'Invalid or expired statement upload.');
-   const file=checked(await supabase.storage.from(bucket).download(ticket.path));if(file.size>10*1024*1024)throw fail(413,'Choose a statement up to 10 MB.');validateStatementFile(Buffer.from(await file.arrayBuffer()),ticket.mime);return {valid:true};
+   const file=checked(await supabase.storage.from(bucket).download(ticket.path));if(file.size>10*1024*1024)throw fail(413,'Choose a statement up to 10 MB.');const bytes=Buffer.from(await file.arrayBuffer());validateStatementFile(bytes,ticket.mime);
+   if(input.vaultCopy===true){
+    if(input.route!=='remote')throw fail(422,'Only remote applications send statements to the lending vault.');
+    const signed=checked(await supabase.storage.from(bucket).createSignedUrl(ticket.path,300));
+    return {valid:true,vaultDocument:{url:signed.signedUrl,mime:ticket.mime,sha256:createHash('sha256').update(bytes).digest('hex'),size:bytes.length}};
+   }
+   return {valid:true};
   },
   async download(token,id){
    if(!token || String(token).length>8192 || !/^[A-Za-z0-9-]{1,100}$/.test(id||''))throw fail(401,'Sign in to view this document.');
