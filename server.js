@@ -1,3 +1,4 @@
+import { registerLeadAssignmentGuards } from "./application-platform/assignment-policy.js";
 import {assignmentContactLines,buildAssignmentSms} from './application-platform/assignment-message.js';
 import { registerApplicationPlatform } from "./application-platform/leads-receiver.js";
 import express from "express";
@@ -55,6 +56,8 @@ app.get("/", (req, res) => {
 });
 
 
+
+registerLeadAssignmentGuards(app, { supabase });
 
 // --- Assign lead route ---
 // --- Assign lead route ---
