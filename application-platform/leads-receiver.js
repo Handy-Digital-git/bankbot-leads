@@ -47,7 +47,7 @@ export function createLeadsReceiver({supabase,integrations={},dashboardReady=fal
    try{checked(await supabase.from('loan_applications').select('id,review_mode,statement_path').limit(0));checks.leadFields=true;}catch{}
    try{checked(await supabase.from('application_statement_uploads').select('id').limit(0));checks.uploadTable=true;}catch{}
    try{checks.privateBucket=checked(await supabase.storage.getBucket(bucket)).public===false;}catch{}
-   return {ready:Object.values(checks).every(value=>value===true),checks};
+   return {ready:Object.values(checks).every(value=>value===true),checks,capabilities:{agentStatementDeferral:true}};
   },
   async uploads(config,input){
    if(!dashboardReady)throw fail(503,'The staff review dashboard is not ready.');
@@ -59,10 +59,21 @@ export function createLeadsReceiver({supabase,integrations={},dashboardReady=fal
   },
   async applications(config,input){
    if(!dashboardReady)throw fail(503,'The staff review dashboard is not ready.');
-   if(!uuid(input.submissionId)||!['remote','visit'].includes(input.route)||!uuid(input.statement?.uploadId)|| !/^[0-9a-f]{64}$/.test(input.statement?.secret||'')|| !Array.isArray(input.formRows)||input.formRows.length>200||input.formRows.some(row=>typeof row.label!=='string'||row.label.length>200||typeof row.value!=='string'||row.value.length>10000))throw fail(422,'Invalid application.');
+   const deferred=input.route==='visit'&&input.statementDeferred===true&&!input.statement;
+   if(!uuid(input.submissionId)||!['remote','visit'].includes(input.route)||(!deferred&&(!uuid(input.statement?.uploadId)|| !/^[0-9a-f]{64}$/.test(input.statement?.secret||'')))|| !Array.isArray(input.formRows)||input.formRows.length>200||input.formRows.some(row=>typeof row.label!=='string'||row.label.length>200||typeof row.value!=='string'||row.value.length>10000))throw fail(422,'Invalid application.');
    if(input.route==='remote' && !/^[-A-Za-z0-9]{1,50}$/.test(input.lendingReference||''))throw fail(422,'A lending application reference is required.');
    const fields=input.fields||{},allowed=['first_name','surname','dob','amount_requested','loan_term','reason_for_borrowing','employment_status','credit_used_before','income','ccj','trust_deed','mental_health','address','town','postcode','accommodation_type','move_in_date','phone_number','best_call_time','email','method_collection'];
    if(!fields.first_name||!fields.surname||allowed.some(key=>fields[key]!==undefined&&(typeof fields[key]!=='string'||fields[key].length>1000)))throw fail(422,'Invalid applicant details.');
+   if(deferred){
+    const digest=hash(JSON.stringify({...input,statementDeferred:true,statement:null}));
+    const previous=checked(await supabase.from('loan_applications').select('id,web_submission_digest').eq('company_name',config.companyName).eq('web_submission_id',input.submissionId).maybeSingle());
+    if(previous){if(previous.web_submission_digest!==digest)throw fail(409,'Application reference already used for different details.');return {reference:'AG-'+input.submissionId.replaceAll('-','').slice(0,16).toUpperCase(),agentVisit:true,status:'received',duplicate:true};}
+    const row={...Object.fromEntries(allowed.filter(key=>fields[key]!==undefined).map(key=>[key,fields[key]])),id:randomUUID(),created_at:new Date(now()).toISOString(),company_name:config.companyName,status:'New',should_decline:null,review_mode:'staff-review-v1',web_company_id:config.id,web_submission_id:input.submissionId,web_submission_digest:digest,application_route:'visit',application_details:{rows:input.formRows,quote:input.quote,confirmations:input.confirmations,statementDeferred:true},lending_reference:null,statement_path:null,statement_mime:null,statement_processing_consent:false,statement_review_state:'awaiting-statement',ai_decision:'**Review status:** Bank statement not provided. Applicant confirmed they wish to proceed with an agent visit. Staff must arrange the required documentation. No AI statement review has been performed.'};
+    const inserted=await supabase.from('loan_applications').insert(row).select('id').single();
+    if(inserted.error?.code==='23505')return this.applications(config,input);
+    checked(inserted);
+    return {reference:'AG-'+input.submissionId.replaceAll('-','').slice(0,16).toUpperCase(),agentVisit:true,status:'received',duplicate:false};
+   }
    const digest=hash(JSON.stringify({...input,statement:{uploadId:input.statement.uploadId}}));
    const ticket=checked(await supabase.from('application_statement_uploads').select('*').eq('id',input.statement.uploadId).maybeSingle());
    if(!ticket || ticket.company_id!==config.id || ticket.submission_id!==input.submissionId || ticket.route!==input.route || !equal(ticket.secret_hash,hash(input.statement.secret)))throw fail(422,'Invalid statement ownership.');

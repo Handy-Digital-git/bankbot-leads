@@ -62,3 +62,14 @@ test('review worker receives only the statement and produces staff-report facts;
  await receiver.applications(config,await uploaded(receiver,store));await receiver.reviewNext();assert.equal(calls,1);assert.equal(store.db.loan_applications[0].statement_review_state,'complete');assert.match(store.db.loan_applications[0].ai_decision,/Unreadable statement/);assert.equal(store.db.loan_applications[0].status,'New');
  const failed=createLeadsReceiver({supabase:store.client,integrations:{handycash:config},dashboardReady:true,extract:async()=>{throw Error('private provider details');}});store.db.loan_applications[0].statement_review_state='pending';await failed.reviewNext();assert.equal(store.db.loan_applications[0].statement_review_state,'needs-check');assert.doesNotMatch(store.db.loan_applications[0].ai_decision,/private provider|PASSED|DECLINED/);assert.ok(store.files.size);
 });
+
+test('deferred agent statements create staff follow-up leads without files or AI and remain idempotent',async()=>{
+ const store=memory();let reviews=0;const receiver=createLeadsReceiver({supabase:store.client,dashboardReady:true,extract:async()=>{reviews++;}});
+ const request={submissionId:randomUUID(),route:'visit',statementDeferred:true,fields:{first_name:'Alex',surname:'Example'},formRows:[{label:'Proceed without a bank statement',value:'Confirmed'}],confirmations:{}};
+ const result=await receiver.applications(config,request);assert.equal(result.duplicate,false);
+ const row=store.db.loan_applications[0];assert.equal(row.statement_path,null);assert.equal(row.statement_processing_consent,false);assert.equal(row.statement_review_state,'awaiting-statement');assert.equal(row.should_decline,null);
+ assert.equal((await receiver.applications(config,request)).duplicate,true);assert.equal(store.db.loan_applications.length,1);
+ await receiver.reviewNext();assert.equal(reviews,0);
+ await assert.rejects(()=>receiver.applications(config,{...request,route:'remote',lendingReference:'HCF123'}),e=>e.status===422);
+ await assert.rejects(()=>receiver.applications(config,{...request,statementDeferred:false}),e=>e.status===422);
+});
